@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
-
-MODULE_PATH = Path(__file__).parents[1] / "autocad_mcp_audited.py"
-SPEC = importlib.util.spec_from_file_location("autocad_mcp_audited", MODULE_PATH)
-AUDITED = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(AUDITED)
+from cad_evoloop.backends.autocad import audited as AUDITED
 
 
 def test_redact_hides_secret_fields() -> None:

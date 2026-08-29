@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import improvement.manager as MODULE
-from improvement import ImprovementManager
+import cad_evoloop.supervisor.improvement as MODULE
+from cad_evoloop.supervisor import ImprovementManager
 
 
 def write(path: Path, value) -> None:

@@ -31,7 +31,27 @@ def test_sample_inputs_do_not_duplicate_ledger_defaults(tmp_path: Path) -> None:
     input_dir.mkdir()
     reference = input_dir / "reference.png"
     reference.write_bytes(b"png")
-    assert BATCH.sample_inputs(tmp_path) == [reference]
+    assert BATCH.sample_inputs(tmp_path) == [tmp_path / "task_desc.json", reference]
+
+
+def test_prepare_job_seals_evaluator_only_assets(tmp_path: Path) -> None:
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    (sample / "task_desc.json").write_text("{}", encoding="utf-8")
+    (sample / "rubrics.json").write_text("{}", encoding="utf-8")
+    (sample / "metadata.json").write_text("{}", encoding="utf-8")
+    (sample / "input_files").mkdir()
+    image = sample / "input_files/reference.png"
+    image.write_bytes(b"png")
+    (sample / "output_files").mkdir()
+    (sample / "output_files/reference.dwg").write_bytes(b"dwg")
+
+    copied_images = BATCH.prepare_job(sample, tmp_path / "job")
+
+    assert copied_images == [tmp_path / "job/input_files/reference.png"]
+    assert not (tmp_path / "job/rubrics.json").exists()
+    assert not (tmp_path / "job/metadata.json").exists()
+    assert not (tmp_path / "job/output_files").exists()
 
 
 def test_prompt_documents_mcp_timeout_units(tmp_path: Path) -> None:
@@ -94,8 +114,8 @@ def test_activate_proposal_routes_all_candidate_components(tmp_path: Path, monke
         "evals/cad-1000-hours/prompts/modeling.md",
         "evals/cad-1000-hours/prompts/repair.md",
         ".agents/skills/autocad-image-modeling/SKILL.md",
-        "mcp/autocad_mcp_audited.py",
-        "evals/cad-1000-hours/verifier/verify.py",
+        "src/cad_evoloop/backends/autocad/audited.py",
+        "src/cad_evoloop/verification/verify.py",
     ]
     for relative in files:
         path = workspace / relative
@@ -114,15 +134,30 @@ def test_activate_proposal_routes_all_candidate_components(tmp_path: Path, monke
 
     assert BATCH.PROMPT_ROOT == workspace / "evals/cad-1000-hours/prompts"
     assert BATCH.SKILL_PATH == workspace / ".agents/skills/autocad-image-modeling/SKILL.md"
-    assert BATCH.MCP_SERVER_PATH == workspace / "mcp/autocad_mcp_audited.py"
-    assert BATCH.VERIFIER_PATH == workspace / "evals/cad-1000-hours/verifier/verify.py"
+    assert BATCH.MCP_SERVER_PATH == workspace / "src/cad_evoloop/backends/autocad/audited.py"
+    assert BATCH.VERIFIER_PATH == workspace / "src/cad_evoloop/verification/verify.py"
 
 
 def test_all_samples_dry_run_uses_stable_complete_sample_set(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
     eval_root = tmp_path / "evals" / "cad-1000-hours"
     for name in ("sample-c", "sample-a", "sample-b"):
-        (eval_root / "samples" / name).mkdir(parents=True)
+        sample = eval_root / "samples" / name
+        sample.mkdir(parents=True)
+        (sample / "task_desc.json").write_text("{}", encoding="utf-8")
+        (sample / "rubrics.json").write_text("{}", encoding="utf-8")
+    (eval_root / "manifest.json").write_text(json.dumps({
+        "source": "test", "revision": "test", "license": None,
+    }), encoding="utf-8")
+    (eval_root / "improvement").mkdir()
+    (eval_root / "improvement/split.json").write_text(json.dumps({
+        "development": ["sample-a", "sample-b", "sample-c"], "holdout": [],
+    }), encoding="utf-8")
+    source = tmp_path / "source.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
     monkeypatch.setattr(BATCH, "EVAL_ROOT", eval_root)
+    monkeypatch.setattr(BATCH, "SOURCE_PATHS", (source,))
     monkeypatch.setattr(BATCH.shutil, "which", lambda _: "codex")
     monkeypatch.setattr(sys, "argv", [
         "batch_codex.py", "--campaign", "dry", "--all-samples", "--dry-run",

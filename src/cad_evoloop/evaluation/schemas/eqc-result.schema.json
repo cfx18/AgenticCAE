@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cad-evoloop.dev/schemas/eqc-result.schema.json",
+  "title": "Evidence-qualified completion result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "eqc",
+    "coverage",
+    "conditional_accuracy",
+    "success",
+    "weights",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "eqc": {"type": "number", "minimum": 0, "maximum": 100},
+    "coverage": {"type": "number", "minimum": 0, "maximum": 100},
+    "conditional_accuracy": {"type": "number", "minimum": 0, "maximum": 100},
+    "success_threshold": {"type": "number", "minimum": 0, "maximum": 100},
+    "success": {"type": "boolean"},
+    "hard_gate_failed": {"type": "boolean"},
+    "weights": {"type": "object"},
+    "checks": {"type": "array"}
+  },
+  "additionalProperties": false
+}

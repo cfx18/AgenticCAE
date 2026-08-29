@@ -18,10 +18,18 @@ from typing import Any
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = EVAL_ROOT.parents[1]
-sys.path.insert(0, str(EVAL_ROOT))
+sys.path.insert(0, str(WORKSPACE / "src"))
 
-from runledger import RunLedger
-from adaptive import AdaptiveSession, build_diagnostic
+from cad_evoloop.ledger import RunLedger
+from cad_evoloop.evaluation import (
+    build_campaign_manifest,
+    evidence_qualified_completion,
+    export_agent_inputs,
+    visible_input_paths,
+    write_immutable_manifest,
+)
+from cad_evoloop.protocol import build_diagnostic
+from cad_evoloop.supervisor import AdaptiveSession
 
 
 DEFAULT_MODELS = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
@@ -33,13 +41,13 @@ DEFAULT_SMOKE_SAMPLES = (
 SOURCE_PATHS = (
     WORKSPACE / ".agents/skills/autocad-image-modeling/SKILL.md",
     WORKSPACE / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py",
-    WORKSPACE / "mcp/autocad_mcp_audited.py",
-    WORKSPACE / "mcp/autocad_jobs.py",
-    WORKSPACE / "mcp/autocad_core_console.py",
-    EVAL_ROOT / "verifier/extract_autocad.py",
-    EVAL_ROOT / "verifier/extract_core_console.py",
-    EVAL_ROOT / "verifier/verify.py",
-    EVAL_ROOT / "runledger/ledger.py",
+    WORKSPACE / "src/cad_evoloop/backends/autocad/audited.py",
+    WORKSPACE / "src/cad_evoloop/backends/autocad/jobs.py",
+    WORKSPACE / "src/cad_evoloop/backends/autocad/core_console.py",
+    WORKSPACE / "src/cad_evoloop/verification/extract_autocad.py",
+    WORKSPACE / "src/cad_evoloop/verification/extract_core_console.py",
+    WORKSPACE / "src/cad_evoloop/verification/verify.py",
+    WORKSPACE / "src/cad_evoloop/ledger/ledger.py",
     EVAL_ROOT / "prompts/modeling.md",
     EVAL_ROOT / "prompts/repair.md",
     Path(__file__).resolve(),
@@ -48,8 +56,8 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 PROMPT_ROOT = EVAL_ROOT / "prompts"
 SKILL_PATH = WORKSPACE / ".agents/skills/autocad-image-modeling/SKILL.md"
 SKILL_SERVER_PATH = WORKSPACE / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"
-MCP_SERVER_PATH = WORKSPACE / "mcp/autocad_mcp_audited.py"
-VERIFIER_PATH = EVAL_ROOT / "verifier/verify.py"
+MCP_SERVER_PATH = WORKSPACE / "src/cad_evoloop/backends/autocad/audited.py"
+VERIFIER_PATH = WORKSPACE / "src/cad_evoloop/verification/verify.py"
 
 
 def activate_proposal(proposal_id: str) -> dict[str, Any]:
@@ -77,9 +85,9 @@ def activate_proposal(proposal_id: str) -> dict[str, Any]:
             return "prompt"
         if relative.endswith("/SKILL.md"):
             return "skill"
-        if relative.startswith("mcp/"):
+        if relative.startswith("src/cad_evoloop/backends/autocad/"):
             return "mcp"
-        if "/verifier/" in relative:
+        if relative.startswith("src/cad_evoloop/verification/"):
             return "verifier"
         raise ValueError(f"Cannot infer proposal component for {relative}")
 
@@ -91,9 +99,9 @@ def activate_proposal(proposal_id: str) -> dict[str, Any]:
     if "skill" in changed_components:
         SKILL_PATH = candidate_workspace / ".agents/skills/autocad-image-modeling/SKILL.md"
     if "mcp" in changed_components:
-        MCP_SERVER_PATH = candidate_workspace / "mcp/autocad_mcp_audited.py"
+        MCP_SERVER_PATH = candidate_workspace / "src/cad_evoloop/backends/autocad/audited.py"
     if "verifier" in changed_components:
-        VERIFIER_PATH = candidate_workspace / "evals/cad-1000-hours/verifier/verify.py"
+        VERIFIER_PATH = candidate_workspace / "src/cad_evoloop/verification/verify.py"
     production_by_relative = {
         path.resolve().relative_to(WORKSPACE.resolve()).as_posix(): path for path in SOURCE_PATHS
     }
@@ -120,8 +128,8 @@ def activate_adaptive_session(session: AdaptiveSession) -> None:
     SKILL_SERVER_PATH = session.path(
         ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"
     )
-    MCP_SERVER_PATH = session.path("mcp/autocad_mcp_audited.py")
-    VERIFIER_PATH = session.path("evals/cad-1000-hours/verifier/verify.py")
+    MCP_SERVER_PATH = session.path("src/cad_evoloop/backends/autocad/audited.py")
+    VERIFIER_PATH = session.path("src/cad_evoloop/verification/verify.py")
     SOURCE_PATHS = session.source_paths() + (Path(__file__).resolve(),)
 
 
@@ -153,22 +161,11 @@ def read_events(path: Path) -> dict[str, Any]:
 
 
 def sample_inputs(sample_dir: Path) -> list[Path]:
-    inputs: list[Path] = []
-    input_dir = sample_dir / "input_files"
-    if input_dir.is_dir():
-        inputs.extend(path for path in input_dir.rglob("*") if path.is_file())
-    return inputs
+    return visible_input_paths(sample_dir)
 
 
 def prepare_job(sample_dir: Path, job_dir: Path) -> list[Path]:
-    job_dir.mkdir(parents=True, exist_ok=False)
-    for name in ("task_desc.json", "rubrics.json", "metadata.json"):
-        source = sample_dir / name
-        if source.is_file():
-            shutil.copy2(source, job_dir / name)
-    source_inputs = sample_dir / "input_files"
-    if source_inputs.is_dir():
-        shutil.copytree(source_inputs, job_dir / "input_files")
+    export_agent_inputs(sample_dir, job_dir)
     return sorted(
         path for path in (job_dir / "input_files").rglob("*")
         if path.is_file() and path.suffix.casefold() in IMAGE_SUFFIXES
@@ -398,6 +395,7 @@ def run_job(
     last_score: float | None = None
     adaptive_decisions = 0
     final_result: dict[str, Any] = {"status": "failed", "score": 0.0, "coverage": 0.0}
+    final_eqc: dict[str, Any] = evidence_qualified_completion({})
 
     for attempt_number in range(1, max_attempts + 1):
         verifier_only = pending_action == "retry_verifier"
@@ -545,6 +543,12 @@ def run_job(
         if verifier_error:
             attempt_metrics["verifier_error"] = verifier_error
         verdict_value = json.loads(verdict_path.read_text(encoding="utf-8"))
+        final_eqc = evidence_qualified_completion(verdict_value)
+        verdict_value["eqc"] = final_eqc
+        verdict_path.write_text(
+            json.dumps(verdict_value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+        )
+        attempt_metrics["eqc"] = final_eqc
         verdict_coverage = float(verdict_value.get("coverage", 0.0) or 0.0)
         coverage_gap = (
             adaptive_session is not None
@@ -731,6 +735,7 @@ def run_job(
         },
         "errors": [error for item in attempts for error in item.get("errors", [])],
         "attempts": attempts,
+        "eqc": final_eqc,
     }
     metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if attempts:
@@ -768,6 +773,14 @@ def main() -> None:
         help="Run every sample directory in stable identifier order",
     )
     parser.add_argument("--reasoning-effort", default="medium", choices=("low", "medium", "high", "xhigh", "max"))
+    parser.add_argument(
+        "--protocol-mode", choices=("development", "pilot", "frozen-evaluation"),
+        help="Evaluation protocol boundary; adaptive sessions require development mode",
+    )
+    parser.add_argument(
+        "--split-manifest", type=Path,
+        help="Split JSON to bind; frozen evaluation requires an explicit sealed paper-final split",
+    )
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--max-jobs", type=int)
     parser.add_argument("--proposal", help="Evaluate isolated candidate sources from an improvement proposal")
@@ -793,6 +806,8 @@ def main() -> None:
         parser.error("--max-attempts must be at least 1")
     if args.max_iterations < 1:
         parser.error("--max-iterations must be at least 1")
+    if args.max_jobs is not None and args.max_jobs < 1:
+        parser.error("--max-jobs must be at least 1")
     if not 0.0 <= args.min_coverage <= 100.0:
         parser.error("--min-coverage must be between 0 and 100")
     models = args.models or list(DEFAULT_MODELS)
@@ -818,12 +833,53 @@ def main() -> None:
             parser.error(f"Adaptive modification is development-only; non-development samples: {holdout}")
         activate_adaptive_session(adaptive_session)
         profile = {"type": "adaptive", "session_id": args.adaptive_session}
+    protocol_mode = args.protocol_mode or (
+        "development" if adaptive_session is not None else "pilot"
+    )
+    if adaptive_session is not None and protocol_mode != "development":
+        parser.error("Adaptive modification requires --protocol-mode development")
     executable = shutil.which("codex")
     if not executable:
         raise FileNotFoundError("codex executable was not found")
     jobs = [(sample, model) for sample in samples for model in models]
     if args.max_jobs is not None:
         jobs = jobs[:args.max_jobs]
+    scheduled_samples = list(dict.fromkeys(sample for sample, _ in jobs))
+    scheduled_models = list(dict.fromkeys(model for _, model in jobs))
+    campaign_dir = EVAL_ROOT / "batch" / args.campaign
+    campaign_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = campaign_dir / "campaign-manifest.json"
+    existing_created_at = None
+    if manifest_path.is_file():
+        existing_created_at = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        ).get("created_at")
+    campaign_manifest = build_campaign_manifest(
+        campaign_id=args.campaign,
+        mode=protocol_mode,
+        eval_root=EVAL_ROOT,
+        sample_ids=scheduled_samples,
+        models=[
+            {"name": model, "reasoning_effort": args.reasoning_effort}
+            for model in scheduled_models
+        ],
+        source_paths=SOURCE_PATHS,
+        execution={
+            "timeout_seconds": args.timeout,
+            "max_attempts": args.max_attempts,
+            "max_iterations": args.max_iterations if adaptive_session else None,
+            "job_time_budget_seconds": args.job_time_budget,
+            "stagnation_limit": args.stagnation_limit,
+            "minimum_coverage": args.min_coverage if adaptive_session else None,
+            "system_profile": profile,
+            "jobs": [
+                {"sample_id": sample, "model": model} for sample, model in jobs
+            ],
+        },
+        split_path=args.split_manifest,
+        created_at=existing_created_at,
+    )
+    write_immutable_manifest(manifest_path, campaign_manifest)
     plan = {
         "campaign": args.campaign,
         "models": models,
@@ -833,10 +889,10 @@ def main() -> None:
         "max_iterations": args.max_iterations if adaptive_session else None,
         "min_coverage": args.min_coverage if adaptive_session else None,
         "system_profile": profile,
+        "protocol_mode": protocol_mode,
+        "manifest_sha256": campaign_manifest["manifest_sha256"],
         "jobs": [{"sample_id": sample, "model": model} for sample, model in jobs],
     }
-    campaign_dir = EVAL_ROOT / "batch" / args.campaign
-    campaign_dir.mkdir(parents=True, exist_ok=True)
     (campaign_dir / "plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(plan, ensure_ascii=False))
     if args.dry_run:

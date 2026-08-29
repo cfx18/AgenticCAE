@@ -1,6 +1,10 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.egg-info/
+.local/
+build/
+dist/
 key.txt
 
 # Local evaluation data and binary artifacts are tracked by the run ledger.

@@ -9,20 +9,21 @@ import sys
 
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(EVAL_ROOT))
+WORKSPACE = EVAL_ROOT.parents[1]
+sys.path.insert(0, str(WORKSPACE / "src"))
 
-from runledger import RunLedger
+from cad_evoloop.ledger import RunLedger
 
 
 DEFAULT_SOURCES = (
     EVAL_ROOT.parents[1] / ".agents/skills/autocad-image-modeling/SKILL.md",
     EVAL_ROOT.parents[1] / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py",
-    EVAL_ROOT.parents[1] / "mcp/autocad_mcp_audited.py",
-    EVAL_ROOT / "verifier/extract_autocad.py",
-    EVAL_ROOT / "verifier/verify.py",
-    EVAL_ROOT / "verifier/vlm/evaluate.py",
-    EVAL_ROOT / "verifier/vlm/provider.py",
-    EVAL_ROOT / "verifier/vlm/render_scene.py",
+    WORKSPACE / "src/cad_evoloop/backends/autocad/audited.py",
+    WORKSPACE / "src/cad_evoloop/verification/extract_autocad.py",
+    WORKSPACE / "src/cad_evoloop/verification/verify.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/evaluate.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/provider.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/render_scene.py",
     EVAL_ROOT / "verifier/vlm/visual-verdict.schema.json",
     EVAL_ROOT / "runledger/ledger.py",
     EVAL_ROOT / "runledger/schemas/run.schema.json",

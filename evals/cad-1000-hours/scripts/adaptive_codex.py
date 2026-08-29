@@ -10,10 +10,12 @@ import sys
 
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(EVAL_ROOT))
+WORKSPACE = EVAL_ROOT.parents[1]
+sys.path.insert(0, str(WORKSPACE / "src"))
 
-from adaptive import AdaptiveSession, build_diagnostic
-from adaptive.session import write_json
+from cad_evoloop.protocol import build_diagnostic
+from cad_evoloop.supervisor import AdaptiveSession
+from cad_evoloop.supervisor.session import write_json
 
 
 def read_json(path: Path) -> dict:

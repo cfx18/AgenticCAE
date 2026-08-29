@@ -150,7 +150,7 @@ swapped dimension evidence, plausible text used instead of native dimensions,
 stale DWG checkpoints, timeouts, duplicate rubric IDs, and attempts to read
 evaluator-only files.
 
-## 5. Target Repository Architecture
+## 5. Repository Architecture
 
 ```text
 CAD-EvoLoop/
@@ -161,7 +161,7 @@ CAD-EvoLoop/
   CODE_OF_CONDUCT.md
   SECURITY.md
   pyproject.toml
-  src/agentic_cad/
+  src/cad_evoloop/
     agent/                 # model runtime and planning adapters
     supervisor/            # diagnosis, ownership, action policy
     protocol/              # versioned typed messages and JSON schemas

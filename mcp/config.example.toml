@@ -1,6 +1,6 @@
 [mcp_servers.autocad]
 command = "python"
-args = ["E:/AgenticCAE/mcp/autocad_mcp_audited.py"]
+args = ["E:/AgenticCAE/src/cad_evoloop/backends/autocad/audited.py"]
 env = { AUTOCAD_MCP_WORKSPACE = "E:/AgenticCAE", AUTOCAD_MCP_AUDIT_PATH = "E:/AgenticCAE/evals/cad-1000-hours/records/mcp-audit.jsonl" }
 startup_timeout_sec = 15
 tool_timeout_sec = 120

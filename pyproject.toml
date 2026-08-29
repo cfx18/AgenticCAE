@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cad-evoloop"
+version = "0.1.0"
+description = "Evidence-grounded cross-layer self-improvement for CAD agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+authors = [{name = "CAD-EvoLoop Contributors"}]
+dependencies = [
+  "Pillow>=10",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+autocad = ["pywin32>=306; sys_platform == 'win32'"]
+test = ["pytest>=8"]
+
+[project.scripts]
+cad-evoloop = "cad_evoloop.cli:main"
+cad-evoloop-batch = "cad_evoloop.cli:batch"
+cad-evoloop-ledger = "cad_evoloop.cli:ledger"
+cad-evoloop-improve = "cad_evoloop.cli:improve"
+cad-evoloop-eqc = "cad_evoloop.cli:eqc"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cad_evoloop = ["verification/schemas/*.json", "evaluation/schemas/*.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "evals/cad-1000-hours"]
+testpaths = ["tests", "mcp/tests", "evals/cad-1000-hours"]

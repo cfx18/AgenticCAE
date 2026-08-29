@@ -1,6 +1,6 @@
 # Audited AutoCAD MCP
 
-`autocad_mcp_audited.py` loads the AutoCAD MCP shipped with the project skill,
+`src/cad_evoloop/backends/autocad/audited.py` loads the AutoCAD MCP shipped with the project skill,
 preserves its unrestricted CAD command surface, and adds only execution and audit
 infrastructure:
 

@@ -11,29 +11,39 @@ paper benchmark result.
 
 ## Current Components
 
-- `mcp/`: audited AutoCAD and isolated Core Console execution.
-- `evals/cad-1000-hours/verifier/`: deterministic and Codex VLM verification.
-- `evals/cad-1000-hours/adaptive/`: typed diagnostics and adaptive sessions.
-- `evals/cad-1000-hours/improvement/`: isolated candidate changes, gates, and
-  rollback.
-- `evals/cad-1000-hours/runledger/`: append-only trajectories, artifacts, source
-  hashes, integrity checks, and run comparison.
+- `src/cad_evoloop/backends/autocad/`: audited AutoCAD and isolated Core Console execution.
+- `src/cad_evoloop/verification/`: deterministic and Codex VLM verification.
+- `src/cad_evoloop/supervisor/`: typed diagnostics and adaptive system changes.
+- `src/cad_evoloop/evaluation/`: sealed inputs, immutable campaigns, and EQC metrics.
+- `src/cad_evoloop/ledger/`: append-only trajectories, artifacts, source hashes,
+  integrity checks, and run comparison.
 - `.agents/skills/autocad-image-modeling/`: the project CAD skill.
 
-The planned package boundaries, evaluation protocol, publication figures, and
-release gates are in [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md).
+The old `mcp/` and `evals/...` Python entry points remain compatibility wrappers.
+The research roadmap and protocol are in
+[docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md) and
+[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md).
 
 ## Verification
 
-Run the current test suite from the repository root:
+Install the package for development and run the suite from the repository root:
 
 ```powershell
-$env:PYTHONPATH = (Resolve-Path 'evals/cad-1000-hours').Path
+python -m pip install -e ".[test]"
 python -m pytest -q
 ```
 
-The last verified state passed 68 tests. The temporary `PYTHONPATH` setup is a
-known packaging gap that the planned `src/` migration will remove.
+Stable CLIs are installed as `cad-evoloop`, `cad-evoloop-batch`,
+`cad-evoloop-ledger`, `cad-evoloop-improve`, and `cad-evoloop-eqc`. For example:
+
+```powershell
+cad-evoloop batch --campaign pilot-01 --all-samples --protocol-mode pilot
+cad-evoloop campaign-verify evals/cad-1000-hours/batch/pilot-01/campaign-manifest.json
+```
+
+Every campaign seals model and execution settings, source hashes, split membership,
+visible input hashes, evaluator-only hashes, and environment identity before the
+first job starts.
 
 ## Data and Generated Artifacts
 

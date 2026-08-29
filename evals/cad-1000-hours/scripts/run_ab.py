@@ -150,7 +150,7 @@ def main() -> int:
                 raise RuntimeError(f"{phase} batch did not produce {args.expected_results} results")
 
         test_env = os.environ.copy()
-        test_env["PYTHONPATH"] = str(EVAL_ROOT)
+        test_env["PYTHONPATH"] = os.pathsep.join((str(WORKSPACE / "src"), str(EVAL_ROOT)))
         tests = [
             sys.executable, "-m", "pytest",
             "mcp/tests", "evals/cad-1000-hours/runledger/tests",

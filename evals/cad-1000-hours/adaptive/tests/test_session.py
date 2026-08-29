@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import adaptive.session as MODULE
-from adaptive import AdaptiveSession
+import cad_evoloop.supervisor.session as MODULE
+from cad_evoloop.supervisor import AdaptiveSession
 
 
 def seed_workspace(root: Path) -> Path:
@@ -39,7 +39,7 @@ def test_session_copies_complete_candidate_components(tmp_path: Path) -> None:
     eval_root = seed_workspace(tmp_path)
     session = AdaptiveSession(eval_root, "s1", create=True)
 
-    assert session.path("evals/cad-1000-hours/verifier/extract_autocad.py").is_file()
+    assert session.path("src/cad_evoloop/verification/extract_autocad.py").is_file()
     assert session.path(".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py").is_file()
     assert len(session.source_paths()) == sum(len(items) for items in MODULE.SESSION_FILES.values())
 
@@ -81,7 +81,7 @@ def test_patch_normalizes_windows_bom_before_validation(tmp_path: Path, monkeypa
     session.manifest["iteration"] = 1
     MODULE.write_json(session.manifest_path, session.manifest)
     (session.root / "decisions" / "i001").mkdir(parents=True)
-    target = "evals/cad-1000-hours/verifier/verify.py"
+    target = "src/cad_evoloop/verification/verify.py"
 
     def fake_run(command, **kwargs):
         if command[1] == "exec":
@@ -109,12 +109,12 @@ def test_patch_removes_runtime_caches(tmp_path: Path, monkeypatch) -> None:
     session.manifest["iteration"] = 1
     MODULE.write_json(session.manifest_path, session.manifest)
     (session.root / "decisions" / "i001").mkdir(parents=True)
-    target = "evals/cad-1000-hours/verifier/verify.py"
+    target = "src/cad_evoloop/verification/verify.py"
 
     def fake_run(command, **kwargs):
         if command[1] == "exec":
             session.path(target).write_text("value = 2\n", encoding="utf-8")
-            cache = session.path("evals/cad-1000-hours/verifier/__pycache__/verify.pyc")
+            cache = session.path("src/cad_evoloop/verification/__pycache__/verify.pyc")
             cache.parent.mkdir(parents=True)
             cache.write_bytes(b"cache")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -130,7 +130,7 @@ def test_patch_removes_runtime_caches(tmp_path: Path, monkeypatch) -> None:
     result = session.apply_patch(action, {}, model="m", effort="medium")
 
     assert result["rolled_back"] is False
-    assert not session.path("evals/cad-1000-hours/verifier/__pycache__").exists()
+    assert not session.path("src/cad_evoloop/verification/__pycache__").exists()
 
 
 def test_boundary_rejection_rolls_back_all_managed_changes(tmp_path: Path, monkeypatch) -> None:
@@ -139,7 +139,7 @@ def test_boundary_rejection_rolls_back_all_managed_changes(tmp_path: Path, monke
     session.manifest["iteration"] = 1
     MODULE.write_json(session.manifest_path, session.manifest)
     (session.root / "decisions" / "i001").mkdir(parents=True)
-    target = "evals/cad-1000-hours/verifier/verify.py"
+    target = "src/cad_evoloop/verification/verify.py"
     original = session.path(target).read_bytes()
 
     def fake_run(command, **kwargs):

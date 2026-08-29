@@ -7,14 +7,11 @@ from types import SimpleNamespace
 
 MODULE_PATH = Path(__file__).parents[1] / "verify.py"
 sys.path.insert(0, str(MODULE_PATH.parent))
-import extract_autocad as EXTRACTOR
-import extract_core_console as CORE_EXTRACTOR
+from cad_evoloop.verification import extract_autocad as EXTRACTOR
+from cad_evoloop.verification import extract_core_console as CORE_EXTRACTOR
 
 
-SPEC = importlib.util.spec_from_file_location("cad_verifier", MODULE_PATH)
-VERIFY = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(VERIFY)
+from cad_evoloop.verification import verify as VERIFY
 
 
 def base_scene() -> dict:

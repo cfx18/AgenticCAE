@@ -9,9 +9,10 @@ import sys
 
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(EVAL_ROOT))
+WORKSPACE = EVAL_ROOT.parents[1]
+sys.path.insert(0, str(WORKSPACE / "src"))
 
-from improvement import ImprovementManager
+from cad_evoloop.supervisor import ImprovementManager
 
 
 def emit(value) -> None:

@@ -30,12 +30,18 @@ def test_complete_run_is_queryable_and_integral(tmp_path: Path) -> None:
     ledger.add_artifact(run, attempt, candidate, role="candidate")
     verdict = workspace / "verdict.json"
     verdict.write_text(
-        json.dumps({"passed": True, "score": 100.0, "coverage": 80.0}),
+        json.dumps({
+            "passed": True, "score": 100.0, "coverage": 80.0,
+            "eqc": {"eqc": 75.0, "success": False},
+        }),
         encoding="utf-8",
     )
     result = ledger.finish(run, attempt, verdict)
 
     assert result["status"] == "passed"
+    assert result["eqc"] == 75.0
+    assert result["eqc_success"] is False
+    assert result["evaluation_status"] == "failed"
     assert ledger.verify_integrity(run) == {
         "ok": True,
         "checked_files": 6,
@@ -45,6 +51,7 @@ def test_complete_run_is_queryable_and_integral(tmp_path: Path) -> None:
     listed = ledger.list_runs("sample-1")
     assert listed[0]["run_id"] == "run-1"
     assert listed[0]["score"] == 100.0
+    assert listed[0]["eqc"] == 75.0
     assert ledger.show(run)["agent"]["api_key"] == "[REDACTED]"
 
 

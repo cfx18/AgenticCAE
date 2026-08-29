@@ -1,7 +1,8 @@
 # Security Policy
 
-Report vulnerabilities privately to the repository maintainers before public
-disclosure.
+Report vulnerabilities through the repository host's private vulnerability
+reporting channel before public disclosure. Do not include exploit details,
+credentials, or private dataset assets in a public issue.
 
 CAD-EvoLoop can execute unrestricted AutoCAD commands and AutoLISP through a
 local MCP server. Run it only in a trusted workspace, keep credentials out of
