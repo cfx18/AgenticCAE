@@ -108,6 +108,8 @@ class CodexCliProvider:
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=self.timeout,
             check=False,
         )

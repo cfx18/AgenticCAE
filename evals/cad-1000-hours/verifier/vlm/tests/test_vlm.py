@@ -156,6 +156,8 @@ def test_provider_retains_evaluator_usage_and_output_paths(tmp_path: Path, monke
     monkeypatch.setattr("cad_evoloop.verification.vlm.provider.shutil.which", lambda _: "codex")
 
     def fake_run(command, **kwargs):
+        assert kwargs["encoding"] == "utf-8"
+        assert kwargs["errors"] == "replace"
         result_path = Path(command[command.index("--output-last-message") + 1])
         result_path.write_text(json.dumps(visual_result()), encoding="utf-8")
         return __import__("subprocess").CompletedProcess(
