@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agenticcae.local/schemas/trajectory-event-1.0.json",
+  "title": "CAD Agent Trajectory Event",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "sequence",
+    "timestamp",
+    "run_id",
+    "actor",
+    "type",
+    "status",
+    "summary",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "run_id": {"type": "string"},
+    "attempt_id": {"type": ["string", "null"]},
+    "actor": {"type": "string"},
+    "type": {"type": "string"},
+    "status": {"type": "string"},
+    "summary": {"type": "string"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

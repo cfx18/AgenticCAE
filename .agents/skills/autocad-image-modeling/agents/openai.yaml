@@ -1,0 +1,14 @@
+interface:
+  display_name: "AutoCAD Image Modeling"
+  short_description: "Create AutoCAD drawings and models"
+  default_prompt: "Use $autocad-image-modeling to turn my reference image into an editable AutoCAD model."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "autocad"
+      description: "Local AutoCAD command and automation bridge"
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true

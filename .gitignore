@@ -1,0 +1,34 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+key.txt
+
+# Local evaluation data and binary artifacts are tracked by the run ledger.
+evals/cad-1000-hours/records/
+evals/cad-1000-hours/runs/
+evals/cad-1000-hours/batch/
+evals/cad-1000-hours/improvement/adaptive/
+evals/cad-1000-hours/improvement/proposals/
+evals/cad-1000-hours/samples/
+evals/cad-1000-hours/improvement/campaigns/
+
+# AutoCAD jobs, checkpoints, and local application state.
+mcp/jobs/
+*.dwg
+*.bak
+*.dwl
+*.dwl2
+*.err
+*.log
+
+# Paper outputs and local experiment exports are regenerated from manifests.
+artifacts/
+reports/generated/
+paper/build/
+
+# This managed workspace keeps Git metadata separate from the worktree.
+.git-meta/
+
+# Loader-managed caches and unrelated local teaching data.
+/skills/
+【工图】2023春/

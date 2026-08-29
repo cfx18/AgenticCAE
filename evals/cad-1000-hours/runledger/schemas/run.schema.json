@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agenticcae.local/schemas/cad-run-1.0.json",
+  "title": "CAD Agent Run",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "sample_id",
+    "status",
+    "created_at",
+    "updated_at",
+    "agent",
+    "source",
+    "inputs",
+    "attempts",
+    "event_count"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run_id": {"type": "string"},
+    "sample_id": {"type": "string"},
+    "parent_run_id": {"type": ["string", "null"]},
+    "status": {"enum": ["running", "passed", "failed", "error", "cancelled"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "agent": {"type": "object"},
+    "source": {
+      "type": "object",
+      "required": ["git", "digest", "files"]
+    },
+    "inputs": {"type": "array"},
+    "attempts": {"type": "array"},
+    "result": {"type": ["object", "null"]},
+    "event_count": {"type": "integer", "minimum": 1}
+  },
+  "additionalProperties": false
+}

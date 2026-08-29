@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "action",
+    "owner",
+    "rationale",
+    "evidence",
+    "component",
+    "files",
+    "instructions",
+    "validation",
+    "expected_outcome",
+    "retryable"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "action": {
+      "type": "string",
+      "enum": [
+        "repair_drawing",
+        "retry_verifier",
+        "retry_tool",
+        "restart_mcp",
+        "patch_prompt",
+        "patch_skill",
+        "patch_mcp",
+        "patch_verifier",
+        "add_test",
+        "stop"
+      ]
+    },
+    "owner": {"type": "string", "enum": ["drawing", "prompt", "skill", "mcp", "verifier", "task", "harness"]},
+    "rationale": {"type": "string", "minLength": 1},
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "component": {"type": ["string", "null"], "enum": [null, "prompt", "skill", "mcp", "verifier", "test"]},
+    "files": {"type": "array", "items": {"type": "string"}},
+    "instructions": {"type": "string"},
+    "validation": {"type": "array", "items": {"type": "string"}},
+    "expected_outcome": {"type": "string", "minLength": 1},
+    "retryable": {"type": "boolean"}
+  }
+}

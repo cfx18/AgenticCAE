@@ -1,0 +1,15 @@
+---
+description: Record and reuse CAD evaluation runs without expanding the general AutoCAD skill
+globs: evals/cad-1000-hours/**
+alwaysApply: false
+---
+
+# CAD Run Records
+
+- Query `scripts/run_ledger.py reuse --sample-id <id>` before drawing. Reuse a verified artifact when its source digest and task inputs remain applicable.
+- Start a new run before modifying CAD. Create one attempt per materially different drawing or repair.
+- Record generated scripts, DWGs, CAD logs, extracted scenes, and verifier verdicts as attempt artifacts.
+- Record tool actions, failures, verifier feedback, and short decision summaries in `trajectory.jsonl`.
+- Never record hidden reasoning, credentials, or unrelated conversation. Use observable actions and evidence only.
+- Keep `SKILL.md` general. Put orchestration and provenance behavior in this project rule and the run-ledger tools.
+- Treat run artifacts as immutable. Create a child attempt or child run instead of overwriting recorded files.
