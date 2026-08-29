@@ -418,9 +418,15 @@ class RunLedger:
         with file_lock(run_dir / ".ledger.lock"):
             manifest = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
             attempt = next(item for item in manifest["attempts"] if item["attempt_id"] == attempt_id)
-            status = "passed" if verdict.get("passed") else "failed"
+            legacy_status = "passed" if verdict.get("passed") else "failed"
+            status = (
+                "passed" if eqc.get("success") is True
+                else "failed" if eqc.get("success") is False
+                else legacy_status
+            )
             result = {
                 "status": status,
+                "legacy_status": legacy_status,
                 "score": verdict.get("score"),
                 "coverage": verdict.get("coverage"),
                 "eqc": eqc.get("eqc"),

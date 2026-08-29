@@ -45,6 +45,11 @@ Every campaign seals model and execution settings, source hashes, split membersh
 visible input hashes, evaluator-only hashes, and environment identity before the
 first job starts.
 
+The batch verifier fuses deterministic CAD evidence with an isolated Codex VLM
+for rubric checks that remain `unverified`. The VLM receives rendered candidate
+and reference images, has no MCP tools, and cannot override deterministic
+failures. Fused EQC success, not the legacy nominal score, controls completion.
+
 ## Data and Generated Artifacts
 
 Downloaded CAD-1000-Hours assets, AutoCAD jobs, DWG files, run records, batch

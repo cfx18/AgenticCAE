@@ -6,8 +6,8 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from verifier.vlm.evaluate import merge_visual_result
-from verifier.vlm.provider import validate_visual_result
+from verifier.vlm.evaluate import evaluate_visual_gaps, merge_visual_result
+from verifier.vlm.provider import CodexCliProvider, validate_visual_result
 from verifier.vlm.render_scene import render_scene
 
 
@@ -93,3 +93,88 @@ def test_scene_renderer_produces_nonblank_png(tmp_path: Path) -> None:
     colors = image.getcolors(maxcolors=image.width * image.height)
     assert image.size == (400, 300)
     assert colors is not None and len(colors) > 1
+
+
+def test_scene_renderer_includes_native_circles(tmp_path: Path) -> None:
+    scene = {"entities": [{
+        "type": "AcDbCircle", "owner": "Model", "Visible": True,
+        "Center": [0.0, 0.0, 0.0], "Radius": 20.0,
+    }]}
+    output = tmp_path / "circle.png"
+
+    render_scene(scene, output, 300, 300)
+
+    colors = Image.open(output).convert("RGB").getcolors(maxcolors=300 * 300)
+    assert colors is not None and len(colors) > 1
+
+
+def test_evaluate_visual_gaps_writes_auditable_result(tmp_path: Path, monkeypatch) -> None:
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    (sample / "task_desc.json").write_text('{"task":"draw"}', encoding="utf-8")
+    (sample / "rubrics.json").write_text(json.dumps({
+        "rubrics": [{"id": "R1", "requirement": "Visible profile"}],
+    }), encoding="utf-8")
+    deterministic = tmp_path / "deterministic.json"
+    deterministic.write_text(json.dumps({
+        "passed": True, "score": 100, "coverage": 75,
+        "hard_gates": [{"id": "document", "status": "pass"}],
+        "dimensions": [],
+        "rubrics": [{"id": "R1", "status": "unverified"}],
+    }), encoding="utf-8")
+    candidate = tmp_path / "candidate.png"
+    reference = tmp_path / "reference.png"
+    Image.new("RGB", (32, 32), "white").save(candidate)
+    Image.new("RGB", (32, 32), "white").save(reference)
+    monkeypatch.setattr(
+        "cad_evoloop.verification.vlm.evaluate.CodexCliProvider.evaluate",
+        lambda self, prompt, images, schema_path, work_dir, expected_ids: (
+            visual_result(), {"provider": "test", "model": self.model},
+        ),
+    )
+    output = tmp_path / "visual.json"
+
+    result = evaluate_visual_gaps(
+        sample_dir=sample,
+        deterministic_path=deterministic,
+        candidate_images=[candidate],
+        reference_images=[reference],
+        output=output,
+        work_dir=tmp_path / "work",
+    )
+
+    assert result["combined"]["decision"] == "pass"
+    assert result["combined"]["coverage_after"] == 100.0
+    assert json.loads(output.read_text(encoding="utf-8"))["target_rubric_ids"] == ["R1"]
+
+
+def test_provider_retains_evaluator_usage_and_output_paths(tmp_path: Path, monkeypatch) -> None:
+    image = tmp_path / "image.png"
+    schema = tmp_path / "schema.json"
+    Image.new("RGB", (16, 16), "white").save(image)
+    schema.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("cad_evoloop.verification.vlm.provider.shutil.which", lambda _: "codex")
+
+    def fake_run(command, **kwargs):
+        result_path = Path(command[command.index("--output-last-message") + 1])
+        result_path.write_text(json.dumps(visual_result()), encoding="utf-8")
+        return __import__("subprocess").CompletedProcess(
+            command, 0,
+            stdout="\n".join([
+                json.dumps({"type": "thread.started", "thread_id": "t1"}),
+                json.dumps({"type": "turn.completed", "usage": {
+                    "input_tokens": 10, "output_tokens": 2,
+                }}),
+            ]),
+            stderr="",
+        )
+
+    monkeypatch.setattr("cad_evoloop.verification.vlm.provider.subprocess.run", fake_run)
+
+    _, metadata = CodexCliProvider().evaluate(
+        "evaluate", [image], schema, tmp_path / "work", ["R1"],
+    )
+
+    assert metadata["usage"] == {"input_tokens": 10, "output_tokens": 2}
+    assert metadata["elapsed_seconds"] >= 0
+    assert Path(metadata["result_path"]).is_file()

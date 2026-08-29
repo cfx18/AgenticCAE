@@ -86,24 +86,22 @@ def merge_visual_result(
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sample-dir", required=True)
-    parser.add_argument("--deterministic-verdict", required=True)
-    parser.add_argument("--candidate-image", action="append", required=True)
-    parser.add_argument("--reference-image", action="append", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--work-dir")
-    parser.add_argument("--model", default=os.environ.get("CAD_VLM_MODEL", "gpt-5.5"))
-    parser.add_argument("--confidence-threshold", type=float, default=0.85)
-    parser.add_argument("--ledger-run")
-    parser.add_argument("--attempt")
-    args = parser.parse_args()
-
-    sample_dir = Path(args.sample_dir).resolve()
-    deterministic_path = Path(args.deterministic_verdict).resolve()
-    output = Path(args.output).resolve()
-    work_dir = Path(args.work_dir).resolve() if args.work_dir else output.parent / "vlm-work"
+def evaluate_visual_gaps(
+    *,
+    sample_dir: Path,
+    deterministic_path: Path,
+    candidate_images: list[Path],
+    reference_images: list[Path],
+    output: Path,
+    work_dir: Path,
+    model: str = "gpt-5.5",
+    confidence_threshold: float = 0.85,
+) -> dict[str, Any]:
+    """Resolve deterministic rubric gaps with an isolated image-only evaluator."""
+    sample_dir = Path(sample_dir).resolve()
+    deterministic_path = Path(deterministic_path).resolve()
+    output = Path(output).resolve()
+    work_dir = Path(work_dir).resolve()
     task = json.loads((sample_dir / "task_desc.json").read_text(encoding="utf-8"))
     rubric_document = json.loads((sample_dir / "rubrics.json").read_text(encoding="utf-8"))
     deterministic = json.loads(deterministic_path.read_text(encoding="utf-8"))
@@ -114,9 +112,11 @@ def main() -> None:
     ]
     if not targets:
         raise ValueError("No unverified rubrics require visual evaluation")
-    candidate_images = [Path(path).resolve() for path in args.candidate_image]
-    reference_images = [Path(path).resolve() for path in args.reference_image]
+    candidate_images = [Path(path).resolve() for path in candidate_images]
+    reference_images = [Path(path).resolve() for path in reference_images]
     images = [*candidate_images, *reference_images]
+    if not candidate_images or not reference_images:
+        raise ValueError("Visual evaluation requires candidate and reference images")
     for image in images:
         if not image.is_file():
             raise FileNotFoundError(image)
@@ -126,12 +126,11 @@ def main() -> None:
     ]
     prompt = build_prompt(task, targets, roles)
     schema_path = Path(__file__).resolve().parents[1] / "schemas/visual-verdict.schema.json"
-    provider = CodexCliProvider(model=args.model)
-    raw, provider_metadata = provider.evaluate(
+    raw, provider_metadata = CodexCliProvider(model=model).evaluate(
         prompt, images, schema_path, work_dir, [item["id"] for item in targets],
     )
     combined = merge_visual_result(
-        deterministic, raw, [item["id"] for item in targets], args.confidence_threshold,
+        deterministic, raw, [item["id"] for item in targets], confidence_threshold,
     )
     result = {
         "schema_version": "1.0",
@@ -151,6 +150,36 @@ def main() -> None:
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sample-dir", required=True)
+    parser.add_argument("--deterministic-verdict", required=True)
+    parser.add_argument("--candidate-image", action="append", required=True)
+    parser.add_argument("--reference-image", action="append", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--work-dir")
+    parser.add_argument("--model", default=os.environ.get("CAD_VLM_MODEL", "gpt-5.5"))
+    parser.add_argument("--confidence-threshold", type=float, default=0.85)
+    parser.add_argument("--ledger-run")
+    parser.add_argument("--attempt")
+    args = parser.parse_args()
+
+    sample_dir = Path(args.sample_dir).resolve()
+    output = Path(args.output).resolve()
+    result = evaluate_visual_gaps(
+        sample_dir=sample_dir,
+        deterministic_path=Path(args.deterministic_verdict),
+        candidate_images=[Path(path) for path in args.candidate_image],
+        reference_images=[Path(path) for path in args.reference_image],
+        output=output,
+        work_dir=Path(args.work_dir).resolve() if args.work_dir else output.parent / "vlm-work",
+        model=args.model,
+        confidence_threshold=args.confidence_threshold,
+    )
+    combined = result["combined"]
 
     if bool(args.ledger_run) != bool(args.attempt):
         raise ValueError("--ledger-run and --attempt must be supplied together")

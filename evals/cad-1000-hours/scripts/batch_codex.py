@@ -30,6 +30,8 @@ from cad_evoloop.evaluation import (
 )
 from cad_evoloop.protocol import build_diagnostic
 from cad_evoloop.supervisor import AdaptiveSession
+from cad_evoloop.verification.vlm.evaluate import evaluate_visual_gaps
+from cad_evoloop.verification.vlm.render_scene import render_scene
 
 
 DEFAULT_MODELS = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
@@ -47,6 +49,11 @@ SOURCE_PATHS = (
     WORKSPACE / "src/cad_evoloop/verification/extract_autocad.py",
     WORKSPACE / "src/cad_evoloop/verification/extract_core_console.py",
     WORKSPACE / "src/cad_evoloop/verification/verify.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/evaluate.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/provider.py",
+    WORKSPACE / "src/cad_evoloop/verification/vlm/render_scene.py",
+    WORKSPACE / "src/cad_evoloop/verification/schemas/visual-verdict.schema.json",
+    WORKSPACE / "src/cad_evoloop/evaluation/metrics.py",
     WORKSPACE / "src/cad_evoloop/ledger/ledger.py",
     EVAL_ROOT / "prompts/modeling.md",
     EVAL_ROOT / "prompts/repair.md",
@@ -367,6 +374,9 @@ def run_job(
     job_time_budget: int = 7200,
     stagnation_limit: int = 2,
     min_coverage: float = 80.0,
+    vlm_model: str = "gpt-5.5",
+    vlm_confidence: float = 0.85,
+    enable_vlm: bool = True,
 ) -> dict[str, Any]:
     sample_dir = EVAL_ROOT / "samples" / sample_id
     if not sample_dir.is_dir():
@@ -543,12 +553,64 @@ def run_job(
         if verifier_error:
             attempt_metrics["verifier_error"] = verifier_error
         verdict_value = json.loads(verdict_path.read_text(encoding="utf-8"))
-        final_eqc = evidence_qualified_completion(verdict_value)
+        visual_value = None
+        visual_path = attempt_dir / "visual-verdict.json"
+        candidate_render = attempt_dir / "candidate-render.png"
+        visual_verifier_failed = False
+        unverified_rubrics = [
+            item for item in verdict_value.get("rubrics", [])
+            if item.get("status") == "unverified"
+        ]
+        if enable_vlm and unverified_rubrics:
+            try:
+                scene_value = json.loads(scene_path.read_text(encoding="utf-8"))
+                render_scene(scene_value, candidate_render)
+                visual_value = evaluate_visual_gaps(
+                    sample_dir=sample_dir,
+                    deterministic_path=verdict_path,
+                    candidate_images=[candidate_render],
+                    reference_images=images,
+                    output=visual_path,
+                    work_dir=attempt_dir / "vlm-work",
+                    model=vlm_model,
+                    confidence_threshold=vlm_confidence,
+                )
+                ledger.add_artifact(run_dir, attempt_id, candidate_render, role="candidate-render")
+                ledger.add_artifact(run_dir, attempt_id, visual_path, role="vlm-verdict")
+                attempt_metrics["vlm_usage"] = visual_value["provider"].get("usage", {})
+                for key in ("events_path", "stderr_path", "result_path"):
+                    provider_path = Path(visual_value["provider"][key])
+                    if provider_path.is_file():
+                        ledger.add_artifact(run_dir, attempt_id, provider_path, role="vlm-log")
+                ledger.event(
+                    run_dir,
+                    "vlm.completed",
+                    f"Visual evaluator decision: {visual_value['combined']['decision']}",
+                    status=visual_value["combined"]["decision"],
+                    actor="vlm-verifier",
+                    attempt_id=attempt_id,
+                    payload={
+                        "model": vlm_model,
+                        "coverage_before": visual_value["combined"]["coverage_before"],
+                        "coverage_after": visual_value["combined"]["coverage_after"],
+                    },
+                )
+            except Exception as exc:
+                visual_verifier_failed = True
+                visual_error_path = attempt_dir / "vlm-error.log"
+                visual_error_path.write_text(traceback.format_exc(), encoding="utf-8")
+                attempt_metrics["vlm_error"] = repr(exc)
+                attempt_metrics["errors"].append(f"Visual verifier failed: {exc!r}")
+                ledger.add_artifact(run_dir, attempt_id, visual_error_path, role="vlm-error")
+        final_eqc = evidence_qualified_completion(verdict_value, visual_value)
+        if visual_value is not None:
+            verdict_value["visual_evidence"] = visual_value
         verdict_value["eqc"] = final_eqc
         verdict_path.write_text(
             json.dumps(verdict_value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
         )
         attempt_metrics["eqc"] = final_eqc
+        attempt_metrics["visual_verifier_failed"] = visual_verifier_failed
         verdict_coverage = float(verdict_value.get("coverage", 0.0) or 0.0)
         coverage_gap = (
             adaptive_session is not None
@@ -559,6 +621,12 @@ def run_job(
             component = "verifier"
             summary = verifier_error or "Verifier infrastructure failure"
             diagnostic_stderr = attempt_dir / "verifier-stderr.log"
+            diagnostic_stdout = attempt_dir / "verifier-stdout.log"
+        elif visual_verifier_failed and verdict_value.get("passed"):
+            outcome = "infrastructure_error"
+            component = "verifier"
+            summary = "Visual verifier could not resolve deterministic evidence gaps"
+            diagnostic_stderr = attempt_dir / "vlm-error.log"
             diagnostic_stdout = attempt_dir / "verifier-stdout.log"
         elif not candidate.is_file() or (return_code not in (None, 0)) or timed_out:
             outcome = "agent_error"
@@ -575,10 +643,10 @@ def run_job(
             )
             diagnostic_stderr = attempt_dir / "verifier-stderr.log"
             diagnostic_stdout = attempt_dir / "verifier-stdout.log"
-        elif verdict_value.get("passed"):
+        elif final_eqc.get("success"):
             outcome = "success"
             component = "drawing"
-            summary = "Candidate passed the independent verifier"
+            summary = "Candidate passed evidence-qualified verification"
             diagnostic_stderr = attempt_dir / "verifier-stderr.log"
             diagnostic_stdout = attempt_dir / "verifier-stdout.log"
         else:
@@ -605,6 +673,11 @@ def run_job(
         )
         ledger.add_artifact(run_dir, attempt_id, diagnostic_path, role="diagnostic")
         final_result = ledger.finish(run_dir, attempt_id, verdict_path)
+        attempt_metrics["agent_elapsed_seconds"] = attempt_metrics["elapsed_seconds"]
+        attempt_metrics["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+        attempt_metrics["verification_elapsed_seconds"] = round(
+            attempt_metrics["elapsed_seconds"] - attempt_metrics["agent_elapsed_seconds"], 3,
+        )
         attempt_metrics.update(final_result)
         attempts.append(attempt_metrics)
         if candidate.is_file() and candidate != canonical_candidate:
@@ -619,6 +692,8 @@ def run_job(
         unchanged_scores = unchanged_scores + 1 if last_score is not None and score <= last_score else 0
         last_score = max(last_score or score, score)
         pending_action = "repair_drawing"
+        if visual_verifier_failed and verdict_value.get("passed"):
+            pending_action = "retry_verifier"
         if (
             adaptive_session is not None
             and (final_result.get("status") != "passed" or coverage_gap)
@@ -733,9 +808,17 @@ def run_job(
             key: sum(int(item.get("usage", {}).get(key, 0) or 0) for item in attempts)
             for key in usage_keys
         },
+        "vlm_usage": {
+            key: sum(int(item.get("vlm_usage", {}).get(key, 0) or 0) for item in attempts)
+            for key in usage_keys
+        },
         "errors": [error for item in attempts for error in item.get("errors", [])],
         "attempts": attempts,
         "eqc": final_eqc,
+    }
+    metrics["total_usage"] = {
+        key: metrics["usage"][key] + metrics["vlm_usage"][key]
+        for key in usage_keys
     }
     metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if attempts:
@@ -746,6 +829,15 @@ def run_job(
         result.update({
             "status": "harness-error",
             "error": "Verifier infrastructure failure; drawing score is invalid",
+        })
+    elif (
+        attempts
+        and attempts[-1].get("visual_verifier_failed")
+        and result.get("legacy_status") == "passed"
+    ):
+        result.update({
+            "status": "evaluation-incomplete",
+            "error": "Visual verifier failed after automatic retries; EQC is incomplete",
         })
     elif (
         adaptive_session is not None
@@ -781,6 +873,9 @@ def main() -> None:
         "--split-manifest", type=Path,
         help="Split JSON to bind; frozen evaluation requires an explicit sealed paper-final split",
     )
+    parser.add_argument("--vlm-model", default="gpt-5.5")
+    parser.add_argument("--vlm-confidence", type=float, default=0.85)
+    parser.add_argument("--disable-vlm", action="store_true")
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--max-jobs", type=int)
     parser.add_argument("--proposal", help="Evaluate isolated candidate sources from an improvement proposal")
@@ -810,6 +905,8 @@ def main() -> None:
         parser.error("--max-jobs must be at least 1")
     if not 0.0 <= args.min_coverage <= 100.0:
         parser.error("--min-coverage must be between 0 and 100")
+    if not 0.0 <= args.vlm_confidence <= 1.0:
+        parser.error("--vlm-confidence must be between 0 and 1")
     models = args.models or list(DEFAULT_MODELS)
     samples = (
         sorted(path.name for path in (EVAL_ROOT / "samples").iterdir() if path.is_dir())
@@ -871,6 +968,11 @@ def main() -> None:
             "job_time_budget_seconds": args.job_time_budget,
             "stagnation_limit": args.stagnation_limit,
             "minimum_coverage": args.min_coverage if adaptive_session else None,
+            "vlm": {
+                "enabled": not args.disable_vlm,
+                "model": args.vlm_model,
+                "confidence_threshold": args.vlm_confidence,
+            },
             "system_profile": profile,
             "jobs": [
                 {"sample_id": sample, "model": model} for sample, model in jobs
@@ -918,6 +1020,9 @@ def main() -> None:
                 job_time_budget=args.job_time_budget,
                 stagnation_limit=args.stagnation_limit,
                 min_coverage=args.min_coverage,
+                vlm_model=args.vlm_model,
+                vlm_confidence=args.vlm_confidence,
+                enable_vlm=not args.disable_vlm,
             )
         except Exception as exc:
             result = {"sample_id": sample, "model": model, "status": "harness-error", "error": repr(exc)}

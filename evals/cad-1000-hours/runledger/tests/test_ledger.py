@@ -38,7 +38,8 @@ def test_complete_run_is_queryable_and_integral(tmp_path: Path) -> None:
     )
     result = ledger.finish(run, attempt, verdict)
 
-    assert result["status"] == "passed"
+    assert result["status"] == "failed"
+    assert result["legacy_status"] == "passed"
     assert result["eqc"] == 75.0
     assert result["eqc_success"] is False
     assert result["evaluation_status"] == "failed"

@@ -36,6 +36,26 @@ def entity_points(entity: dict[str, Any]) -> list[tuple[float, float]]:
             )
             for index in range(steps + 1)
         ]
+    if kind == "AcDbCircle":
+        center = entity.get("Center", [0, 0])
+        radius = float(entity.get("Radius", 0))
+        return [
+            (
+                float(center[0]) + radius * math.cos(2 * math.pi * index / 96),
+                float(center[1]) + radius * math.sin(2 * math.pi * index / 96),
+            )
+            for index in range(97)
+        ]
+    bbox = entity.get("bbox")
+    if isinstance(bbox, dict) and bbox.get("min") and bbox.get("max"):
+        minimum, maximum = bbox["min"], bbox["max"]
+        return [
+            (float(minimum[0]), float(minimum[1])),
+            (float(maximum[0]), float(minimum[1])),
+            (float(maximum[0]), float(maximum[1])),
+            (float(minimum[0]), float(maximum[1])),
+            (float(minimum[0]), float(minimum[1])),
+        ]
     return []
 
 

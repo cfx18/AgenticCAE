@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import shutil
 import subprocess
+import time
 from typing import Any, Iterable
 import uuid
 
@@ -100,6 +101,7 @@ class CodexCliProvider:
             "mcp_servers={}",
         ])
         command.append(prompt)
+        started = time.perf_counter()
         completed = subprocess.run(
             command,
             cwd=work_dir,
@@ -109,6 +111,7 @@ class CodexCliProvider:
             timeout=self.timeout,
             check=False,
         )
+        elapsed = round(time.perf_counter() - started, 3)
         events_path.write_text(completed.stdout, encoding="utf-8")
         stderr_path.write_text(completed.stderr, encoding="utf-8")
         if completed.returncode != 0:
@@ -116,6 +119,7 @@ class CodexCliProvider:
                 f"Codex VLM exited with {completed.returncode}; see {stderr_path}"
             )
         prohibited = []
+        usage: dict[str, Any] = {}
         for line in completed.stdout.splitlines():
             try:
                 event = json.loads(line)
@@ -125,6 +129,8 @@ class CodexCliProvider:
             item_type = item.get("type")
             if item_type in PROHIBITED_ITEM_TYPES:
                 prohibited.append(item_type)
+            if event.get("type") == "turn.completed":
+                usage = event.get("usage") or usage
         if prohibited:
             raise RuntimeError(f"VLM evaluator used prohibited tools: {sorted(set(prohibited))}")
         result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -135,5 +141,8 @@ class CodexCliProvider:
             "invocation_id": invocation_id,
             "events_path": str(events_path),
             "stderr_path": str(stderr_path),
+            "result_path": str(result_path),
             "return_code": completed.returncode,
+            "elapsed_seconds": elapsed,
+            "usage": usage,
         }

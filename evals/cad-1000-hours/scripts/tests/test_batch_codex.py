@@ -185,6 +185,7 @@ def test_allocate_job_dir_preserves_orphan_and_increments_retry(tmp_path: Path) 
 def test_only_stable_results_are_terminal() -> None:
     assert BATCH.is_terminal_result({"status": "passed"})
     assert BATCH.is_terminal_result({"status": "failed", "score": 25})
+    assert BATCH.is_terminal_result({"status": "evaluation-incomplete", "score": 100})
     assert not BATCH.is_terminal_result({"status": "harness-error"})
     assert not BATCH.is_terminal_result({"status": "failed", "interrupted": True})
     assert not BATCH.is_terminal_result({"status": "failed", "timed_out": True})

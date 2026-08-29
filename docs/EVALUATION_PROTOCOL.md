@@ -46,6 +46,12 @@ identifier; invented or duplicate identifiers are rejected. An unresolved or
 failed hard gate prevents task success. Empty and infrastructure-error verdicts
 always produce zero EQC.
 
+For batch runs, candidate scenes are rendered to neutral images and only
+deterministically `unverified` rubric checks are sent to the configured Codex
+VLM. The evaluator runs read-only with MCP disabled. Accepted visual evidence is
+fused before EQC is computed; the resulting EQC success controls repair and
+termination. `legacy_status` is retained only for backward-compatible analysis.
+
 The legacy nominal verifier score remains in artifacts for compatibility. It is
 not the primary paper metric.
 
