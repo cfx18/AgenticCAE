@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from runledger import RunLedger
+import cad_evoloop.ledger.ledger as ledger_module
 
 
 def fixture(tmp_path: Path) -> tuple[RunLedger, Path, Path]:
@@ -63,6 +64,33 @@ def test_reindex_recovers_from_deleted_index(tmp_path: Path) -> None:
 
     assert ledger.reindex() == 1
     assert ledger.list_runs()[0]["run_id"] == "run-1"
+
+
+def test_artifact_copy_retries_transient_windows_sharing_violation(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    ledger, source, workspace = fixture(tmp_path)
+    run = ledger.start("sample-1", run_id="run-1", source_paths=[source])
+    attempt = ledger.add_attempt(run, label="candidate")
+    candidate = workspace / "candidate.dwg"
+    candidate.write_bytes(b"locked then readable")
+    original_copy = ledger_module.shutil.copy2
+    calls = 0
+
+    def flaky_copy(source_path, destination_path):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise PermissionError(13, "sharing violation")
+        return original_copy(source_path, destination_path)
+
+    monkeypatch.setattr(ledger_module.shutil, "copy2", flaky_copy)
+    monkeypatch.setattr(ledger_module.time, "sleep", lambda _: None)
+
+    artifact = ledger.add_artifact(run, attempt, candidate, role="candidate")
+
+    assert calls == 3
+    assert artifact["sha256"] == ledger_module.sha256_file(candidate)
 
 
 def test_parent_attempt_is_automatic(tmp_path: Path) -> None:

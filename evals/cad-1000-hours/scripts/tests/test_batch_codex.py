@@ -255,3 +255,28 @@ def test_failed_verdict_labels_verifier_infrastructure_error(tmp_path: Path) -> 
     value = json.loads(verdict.read_text(encoding="utf-8"))
     assert value["passed"] is False
     assert value["error_type"] == "verifier-infrastructure"
+
+
+def test_harness_recovery_retries_and_preserves_failure_history() -> None:
+    calls = 0
+    retries = []
+
+    def operation():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PermissionError(13, "sharing violation")
+        return {"status": "passed", "eqc": 100.0}
+
+    result = BATCH.run_with_harness_recovery(
+        operation,
+        max_retries=2,
+        delay_seconds=0,
+        on_retry=lambda number, error: retries.append((number, error)),
+    )
+
+    assert calls == 2
+    assert result["status"] == "passed"
+    assert result["harness_retries"] == 1
+    assert "PermissionError" in result["harness_errors"][0]
+    assert retries == [(1, result["harness_errors"][0])]

@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 import traceback
-from typing import Any
+from typing import Any, Callable
 
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
@@ -363,6 +363,40 @@ def below_minimum_coverage(verdict: dict[str, Any], minimum: float) -> bool:
 def should_select_checkpoint(candidate: Path, eqc: float, best_eqc: float) -> bool:
     """Prefer the first valid artifact at each strictly higher EQC level."""
     return candidate.is_file() and eqc > best_eqc
+
+
+def run_with_harness_recovery(
+    operation: Callable[[], dict[str, Any]],
+    *,
+    max_retries: int,
+    delay_seconds: float = 2.0,
+    on_retry: Callable[[int, str], None] | None = None,
+) -> dict[str, Any]:
+    """Rebuild a failed job directory after transient harness exceptions."""
+    errors: list[str] = []
+    for recovery_number in range(max_retries + 1):
+        try:
+            result = operation()
+        except Exception as exc:
+            errors.append(repr(exc))
+            if recovery_number >= max_retries:
+                return {
+                    "status": "harness-error",
+                    "error": errors[-1],
+                    "harness_retries": recovery_number,
+                    "harness_errors": errors,
+                }
+            if on_retry is not None:
+                on_retry(recovery_number + 1, errors[-1])
+            if delay_seconds:
+                time.sleep(delay_seconds * (2 ** recovery_number))
+            continue
+        if errors:
+            result = dict(result)
+            result["harness_retries"] = len(errors)
+            result["harness_errors"] = errors
+        return result
+    raise AssertionError("unreachable")
 
 
 def run_job(
@@ -920,6 +954,10 @@ def main() -> None:
     parser.add_argument("--job-time-budget", type=int, default=7200)
     parser.add_argument("--stagnation-limit", type=int, default=2)
     parser.add_argument(
+        "--max-harness-retries", type=int, default=2,
+        help="Automatic fresh-job retries after transient harness exceptions",
+    )
+    parser.add_argument(
         "--min-coverage", type=float, default=80.0,
         help="Minimum verifier coverage accepted as success in adaptive mode",
     )
@@ -934,6 +972,8 @@ def main() -> None:
         parser.error("--max-iterations must be at least 1")
     if args.max_jobs is not None and args.max_jobs < 1:
         parser.error("--max-jobs must be at least 1")
+    if args.max_harness_retries < 0:
+        parser.error("--max-harness-retries cannot be negative")
     if not 0.0 <= args.min_coverage <= 100.0:
         parser.error("--min-coverage must be between 0 and 100")
     if not 0.0 <= args.vlm_confidence <= 1.0:
@@ -998,6 +1038,7 @@ def main() -> None:
             "max_iterations": args.max_iterations if adaptive_session else None,
             "job_time_budget_seconds": args.job_time_budget,
             "stagnation_limit": args.stagnation_limit,
+            "max_harness_retries": args.max_harness_retries,
             "minimum_coverage": args.min_coverage if adaptive_session else None,
             "vlm": {
                 "enabled": not args.disable_vlm,
@@ -1041,8 +1082,8 @@ def main() -> None:
         if (sample, model) in completed_jobs:
             print(json.dumps({"sample_id": sample, "model": model, "status": "skipped-existing"}))
             continue
-        try:
-            result = run_job(
+        def execute_job() -> dict[str, Any]:
+            return run_job(
                 ledger, args.campaign, sample, model, args.reasoning_effort,
                 args.timeout, executable,
                 args.max_iterations if adaptive_session else args.max_attempts,
@@ -1055,8 +1096,23 @@ def main() -> None:
                 vlm_confidence=args.vlm_confidence,
                 enable_vlm=not args.disable_vlm,
             )
-        except Exception as exc:
-            result = {"sample_id": sample, "model": model, "status": "harness-error", "error": repr(exc)}
+
+        def report_retry(recovery_number: int, error: str) -> None:
+            print(json.dumps({
+                "sample_id": sample,
+                "model": model,
+                "status": "harness-retrying",
+                "recovery_number": recovery_number,
+                "error": error,
+            }, ensure_ascii=False))
+
+        result = run_with_harness_recovery(
+            execute_job,
+            max_retries=args.max_harness_retries,
+            on_retry=report_retry,
+        )
+        result.setdefault("sample_id", sample)
+        result.setdefault("model", model)
         results.append(result)
         results_path.write_text(
             json.dumps(results, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",

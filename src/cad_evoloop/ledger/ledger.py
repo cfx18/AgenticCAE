@@ -12,13 +12,15 @@ import re
 import shutil
 import sqlite3
 import subprocess
-from typing import Any, Iterable, Iterator
+import time
+from typing import Any, Callable, Iterable, Iterator
 import uuid
 
 
 SCHEMA_VERSION = "1.0"
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SECRET_KEYS = ("authorization", "cookie", "password", "secret", "token", "api_key", "apikey")
+FILE_ACCESS_RETRY_DELAYS = (0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 5.0, 5.0)
 
 
 def utc_now() -> str:
@@ -31,6 +33,18 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def retry_file_access(operation: Callable[[], Any]) -> Any:
+    """Retry transient Windows sharing violations without hiding persistent failures."""
+    for delay in (*FILE_ACCESS_RETRY_DELAYS, None):
+        try:
+            return operation()
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def redact(value: Any) -> Any:
@@ -188,7 +202,7 @@ class RunLedger:
             relative = Path("external") / source.name
         destination = destination_root / category / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        retry_file_access(lambda: shutil.copy2(source, destination))
         return {
             "source_path": source.as_posix(),
             "stored_path": destination.relative_to(destination_root).as_posix(),
@@ -374,10 +388,11 @@ class RunLedger:
             if copy:
                 destination = run_dir / "attempts" / attempt_id / safe_role / source.name
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                if destination.exists() and sha256_file(destination) != sha256_file(source):
+                source_digest = retry_file_access(lambda: sha256_file(source))
+                if destination.exists() and sha256_file(destination) != source_digest:
                     destination = destination.with_name(f"{destination.stem}-{uuid.uuid4().hex[:8]}{destination.suffix}")
                 if source != destination:
-                    shutil.copy2(source, destination)
+                    retry_file_access(lambda: shutil.copy2(source, destination))
                 stored_path = destination.relative_to(run_dir).as_posix()
                 digest_path = destination
             else:
@@ -391,7 +406,7 @@ class RunLedger:
                 "stored_path": stored_path,
                 "storage": "copy" if copy else "reference",
                 "source_path": source.as_posix(),
-                "sha256": sha256_file(digest_path),
+                "sha256": retry_file_access(lambda: sha256_file(digest_path)),
                 "bytes": digest_path.stat().st_size,
                 "created_at": utc_now(),
             }
