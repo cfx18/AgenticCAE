@@ -452,6 +452,35 @@ class RunLedger:
             )
         return result
 
+    def select_attempt(self, run: str | Path, attempt_id: str) -> dict[str, Any]:
+        """Select a verified checkpoint as the run result without deleting later attempts."""
+        run_dir = self._resolve_run(run)
+        validate_identifier(attempt_id, "attempt_id")
+        with file_lock(run_dir / ".ledger.lock"):
+            manifest = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+            attempt = next(
+                (item for item in manifest["attempts"] if item["attempt_id"] == attempt_id),
+                None,
+            )
+            if attempt is None or not attempt.get("verification"):
+                raise ValueError(f"Attempt is not verified: {attempt_id}")
+            result = {**attempt["verification"], "selected_attempt_id": attempt_id}
+            manifest["status"] = result["status"]
+            manifest["result"] = result
+            manifest["selected_attempt_id"] = attempt_id
+            manifest["updated_at"] = utc_now()
+            write_json_atomic(run_dir / "run.json", manifest)
+            self._append_event_unlocked(
+                run_dir,
+                "run.selection",
+                result["status"],
+                f"Selected checkpoint {attempt_id} with EQC {result.get('eqc')}",
+                "supervisor",
+                attempt_id,
+                result,
+            )
+        return result
+
     def verify_integrity(self, run: str | Path) -> dict[str, Any]:
         run_dir = self._resolve_run(run)
         manifest = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))

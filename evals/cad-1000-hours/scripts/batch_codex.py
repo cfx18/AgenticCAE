@@ -360,6 +360,11 @@ def below_minimum_coverage(verdict: dict[str, Any], minimum: float) -> bool:
     return bool(verdict.get("passed")) and float(verdict.get("coverage", 0.0) or 0.0) < minimum
 
 
+def should_select_checkpoint(candidate: Path, eqc: float, best_eqc: float) -> bool:
+    """Prefer the first valid artifact at each strictly higher EQC level."""
+    return candidate.is_file() and eqc > best_eqc
+
+
 def run_job(
     ledger: RunLedger,
     campaign: str,
@@ -406,6 +411,13 @@ def run_job(
     adaptive_decisions = 0
     final_result: dict[str, Any] = {"status": "failed", "score": 0.0, "coverage": 0.0}
     final_eqc: dict[str, Any] = evidence_qualified_completion({})
+    best_result: dict[str, Any] | None = None
+    best_eqc = -1.0
+    best_eqc_result: dict[str, Any] | None = None
+    best_attempt_id: str | None = None
+    best_verdict_path: Path | None = None
+    best_scene_path: Path | None = None
+    best_diagnostic_path: Path | None = None
 
     for attempt_number in range(1, max_attempts + 1):
         verifier_only = pending_action == "retry_verifier"
@@ -680,15 +692,24 @@ def run_job(
         )
         attempt_metrics.update(final_result)
         attempts.append(attempt_metrics)
-        if candidate.is_file() and candidate != canonical_candidate:
-            shutil.copy2(candidate, canonical_candidate)
-        shutil.copy2(verdict_path, job_dir / "verdict.json")
-        if scene_path.is_file():
-            shutil.copy2(scene_path, job_dir / "scene.json")
-        previous_candidate = candidate if candidate.is_file() else None
-        previous_verdict = verdict_path
-        previous_diagnostic = diagnostic_path
-        score = float(final_result.get("score", 0.0) or 0.0)
+        attempt_eqc = float(final_eqc.get("eqc", 0.0) or 0.0)
+        if should_select_checkpoint(candidate, attempt_eqc, best_eqc):
+            if candidate != canonical_candidate:
+                shutil.copy2(candidate, canonical_candidate)
+            best_eqc = attempt_eqc
+            best_eqc_result = dict(final_eqc)
+            best_result = dict(final_result)
+            best_attempt_id = attempt_id
+            best_verdict_path = verdict_path
+            best_scene_path = scene_path if scene_path.is_file() else None
+            best_diagnostic_path = diagnostic_path
+            shutil.copy2(verdict_path, job_dir / "verdict.json")
+            if best_scene_path is not None:
+                shutil.copy2(best_scene_path, job_dir / "scene.json")
+        previous_candidate = canonical_candidate if best_result is not None else None
+        previous_verdict = best_verdict_path
+        previous_diagnostic = best_diagnostic_path
+        score = attempt_eqc
         unchanged_scores = unchanged_scores + 1 if last_score is not None and score <= last_score else 0
         last_score = max(last_score or score, score)
         pending_action = "repair_drawing"
@@ -788,6 +809,14 @@ def run_job(
         ):
             break
 
+    if best_result is not None:
+        assert best_attempt_id is not None and best_verdict_path is not None
+        final_result = ledger.select_attempt(run_dir, best_attempt_id)
+        final_eqc = best_eqc_result or final_eqc
+        shutil.copy2(best_verdict_path, job_dir / "verdict.json")
+        if best_scene_path is not None:
+            shutil.copy2(best_scene_path, job_dir / "scene.json")
+
     usage_keys = (
         "input_tokens", "cached_input_tokens", "cache_write_input_tokens",
         "output_tokens", "reasoning_output_tokens",
@@ -815,6 +844,7 @@ def run_job(
         "errors": [error for item in attempts for error in item.get("errors", [])],
         "attempts": attempts,
         "eqc": final_eqc,
+        "selected_attempt_id": best_attempt_id,
     }
     metrics["total_usage"] = {
         key: metrics["usage"][key] + metrics["vlm_usage"][key]
@@ -825,13 +855,14 @@ def run_job(
         ledger.add_artifact(run_dir, attempts[-1]["attempt_id"], metrics_path, role="metrics")
     integrity = ledger.verify_integrity(run_dir)
     result = {**metrics, **final_result, "integrity": integrity, "job_dir": str(job_dir)}
-    if attempts and attempts[-1].get("verifier_failed"):
+    if best_result is None and attempts and attempts[-1].get("verifier_failed"):
         result.update({
             "status": "harness-error",
             "error": "Verifier infrastructure failure; drawing score is invalid",
         })
     elif (
-        attempts
+        best_result is None
+        and attempts
         and attempts[-1].get("visual_verifier_failed")
         and result.get("legacy_status") == "passed"
     ):

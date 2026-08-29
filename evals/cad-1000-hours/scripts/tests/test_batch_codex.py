@@ -198,6 +198,15 @@ def test_adaptive_pass_requires_minimum_coverage() -> None:
     assert not BATCH.below_minimum_coverage({"passed": False, "coverage": 100.0}, 80.0)
 
 
+def test_checkpoint_selection_requires_artifact_and_strict_eqc_improvement(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate.dwg"
+    assert not BATCH.should_select_checkpoint(candidate, 100.0, -1.0)
+    candidate.write_bytes(b"dwg")
+    assert BATCH.should_select_checkpoint(candidate, 80.0, -1.0)
+    assert BATCH.should_select_checkpoint(candidate, 90.0, 80.0)
+    assert not BATCH.should_select_checkpoint(candidate, 80.0, 80.0)
+
+
 def test_load_resumable_results_archives_transient_rows(tmp_path: Path) -> None:
     import json
 

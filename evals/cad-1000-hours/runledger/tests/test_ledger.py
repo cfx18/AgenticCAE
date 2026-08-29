@@ -77,6 +77,32 @@ def test_parent_attempt_is_automatic(tmp_path: Path) -> None:
     assert attempts[1]["parent_attempt_id"] == "a001"
 
 
+def test_select_attempt_rolls_run_result_back_to_verified_checkpoint(tmp_path: Path) -> None:
+    ledger, source, workspace = fixture(tmp_path)
+    run = ledger.start("sample-1", run_id="run-1", source_paths=[source])
+    first = ledger.add_attempt(run, label="best")
+    first_verdict = workspace / "first.json"
+    first_verdict.write_text(json.dumps({
+        "passed": True, "score": 100, "coverage": 100,
+        "eqc": {"eqc": 100, "success": True},
+    }), encoding="utf-8")
+    ledger.finish(run, first, first_verdict)
+    second = ledger.add_attempt(run, label="regression")
+    second_verdict = workspace / "second.json"
+    second_verdict.write_text(json.dumps({
+        "passed": False, "score": 0, "coverage": 0,
+        "eqc": {"eqc": 0, "success": False},
+    }), encoding="utf-8")
+    ledger.finish(run, second, second_verdict)
+
+    result = ledger.select_attempt(run, first)
+
+    assert result["status"] == "passed"
+    assert result["selected_attempt_id"] == first
+    assert ledger.show(run)["selected_attempt_id"] == first
+    assert ledger.list_runs()[0]["status"] == "passed"
+
+
 def test_reuse_returns_best_verified_candidate(tmp_path: Path) -> None:
     ledger, source, workspace = fixture(tmp_path)
     run = ledger.start("sample-1", run_id="run-1", source_paths=[source])
