@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CAD-EvoLoop Run Explorer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">CAD-EvoLoop</div>
+    <div class="campaign-meta">
+      <strong id="campaignName">Loading campaign</strong>
+      <span id="manifestHash"></span>
+    </div>
+    <div class="integrity" id="integrityState">Integrity pending</div>
+  </header>
+
+  <main class="workspace">
+    <aside class="filters">
+      <label for="sampleSelect">Workflow</label>
+      <select id="sampleSelect"></select>
+
+      <fieldset>
+        <legend>Model</legend>
+        <div class="segments" id="modelSegments"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Outcome</legend>
+        <label class="check"><input id="showPassed" type="checkbox" checked> Passed</label>
+        <label class="check"><input id="showFailed" type="checkbox" checked> Failed</label>
+      </fieldset>
+
+      <div class="run-list" id="runList"></div>
+    </aside>
+
+    <section class="content">
+      <div class="run-heading">
+        <div>
+          <div class="eyebrow" id="domainLabel"></div>
+          <h1 id="taskTitle">Select a run</h1>
+        </div>
+        <div class="run-identifiers">
+          <span id="modelLabel"></span>
+          <code id="runId"></code>
+        </div>
+      </div>
+
+      <div class="metrics" id="metrics"></div>
+
+      <nav class="tabs" aria-label="Run views">
+        <button class="tab active" data-tab="evidence">Evidence</button>
+        <button class="tab" data-tab="trajectory">Trajectory</button>
+        <button class="tab" data-tab="rubrics">Rubrics</button>
+      </nav>
+
+      <section class="tab-panel active" id="evidencePanel">
+        <div class="comparison">
+          <figure class="drawing-pane">
+            <figcaption>Reference</figcaption>
+            <div class="image-stage"><img id="referenceImage" alt="Reference drawing"></div>
+            <div class="image-switcher" id="referenceSwitcher"></div>
+          </figure>
+          <figure class="drawing-pane">
+            <figcaption>Selected CAD checkpoint</figcaption>
+            <div class="image-stage"><img id="candidateImage" alt="Rendered CAD candidate"></div>
+            <div class="image-state" id="candidateState"></div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="trajectoryPanel">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Attempt</th><th>Mode</th><th>EQC</th><th>Nominal</th><th>Coverage</th><th>Time</th><th>Result</th></tr></thead>
+            <tbody id="trajectoryRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="rubricsPanel">
+        <div class="rubric-summary" id="rubricSummary"></div>
+        <div class="rubric-list" id="rubricList"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

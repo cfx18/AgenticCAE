@@ -12,6 +12,7 @@ from typing import Callable
 from .evaluation.campaign import validate_campaign_manifest
 from .evaluation.metrics import main as metrics_main
 from .evaluation.report import generate_campaign_report
+from .evaluation.explorer import generate_explorer_bundle
 from .paths import project_root
 
 
@@ -53,6 +54,22 @@ def _report_campaign() -> None:
     print(json.dumps(summary, ensure_ascii=False))
 
 
+def _export_explorer() -> None:
+    parser = argparse.ArgumentParser(description="Export cached evidence for the Run Explorer")
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--render-native", action="store_true")
+    args = parser.parse_args()
+    payload = generate_explorer_bundle(
+        args.campaign_dir, args.output, render_native=args.render_native,
+    )
+    print(json.dumps({
+        "campaign_id": payload["campaign"]["campaign_id"],
+        "runs": len(payload["runs"]),
+        "output": str((args.output / "explorer-data.json").resolve()),
+    }, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -61,6 +78,7 @@ def main() -> None:
         "eqc": (eqc, "compute evidence-qualified completion"),
         "campaign-verify": (_verify_campaign, "validate a campaign manifest"),
         "report": (_report_campaign, "generate campaign tables and paper-ready figures"),
+        "explorer-export": (_export_explorer, "export cached trajectories for the Run Explorer"),
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=commands)

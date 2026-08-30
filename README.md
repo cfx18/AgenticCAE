@@ -41,6 +41,8 @@ Stable CLIs are installed as `cad-evoloop`, `cad-evoloop-batch`,
 cad-evoloop batch --campaign pilot-01 --all-samples --protocol-mode pilot
 cad-evoloop campaign-verify evals/cad-1000-hours/batch/pilot-01/campaign-manifest.json
 cad-evoloop report evals/cad-1000-hours/batch/pilot-01 --output reports/generated/pilot-01
+cad-evoloop explorer-export evals/cad-1000-hours/batch/pilot-01 `
+  --output reports/generated/pilot-01/explorer --render-native
 ```
 
 Every campaign seals model and execution settings, source hashes, split membership,
@@ -51,6 +53,10 @@ The batch verifier fuses deterministic CAD evidence with an isolated Codex VLM
 for rubric checks that remain `unverified`. The VLM receives rendered candidate
 and reference images, has no MCP tools, and cannot override deterministic
 failures. Fused EQC success, not the legacy nominal score, controls completion.
+
+The local Run Explorer in `apps/run-explorer/` reads only exported campaign
+data and cached images. Serve the repository root with a static HTTP server and
+open `/apps/run-explorer/`; it never redraws a CAD artifact or calls a model.
 
 ## Data and Generated Artifacts
 
