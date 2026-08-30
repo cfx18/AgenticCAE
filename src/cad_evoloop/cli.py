@@ -80,6 +80,8 @@ def _replay_verifier() -> None:
     parser.add_argument("--vlm-confidence", type=float, default=0.85)
     parser.add_argument("--vlm-max-evaluations", type=int, default=3)
     parser.add_argument("--max-jobs", type=int)
+    parser.add_argument("--sample", action="append", dest="samples")
+    parser.add_argument("--model", action="append", dest="models")
     args = parser.parse_args()
     summary = replay_verifier(
         args.baseline_campaign,
@@ -89,6 +91,8 @@ def _replay_verifier() -> None:
         confidence_threshold=args.vlm_confidence,
         max_evaluations=args.vlm_max_evaluations,
         max_jobs=args.max_jobs,
+        sample_ids=set(args.samples) if args.samples else None,
+        models=set(args.models) if args.models else None,
     )
     print(json.dumps(summary, ensure_ascii=False))
 

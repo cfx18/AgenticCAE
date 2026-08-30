@@ -106,6 +106,24 @@ def test_core_renderer_detects_native_3d_entities() -> None:
     })
 
 
+def test_dense_planar_scene_gets_detail_views(tmp_path) -> None:
+    from PIL import Image
+
+    source = tmp_path / "sheet.png"
+    Image.new("RGB", (400, 200), "white").save(source)
+
+    outputs = CORE_RENDERER.render_detail_views(source, tmp_path / "details")
+
+    assert CORE_RENDERER.scene_needs_detail_views({
+        "summary": {"entity_count": 150, "type_counts": {"AcDbLine": 150}},
+    })
+    assert not CORE_RENDERER.scene_needs_detail_views({
+        "summary": {"entity_count": 149, "type_counts": {"AcDbLine": 149}},
+    })
+    assert len(outputs) == 4
+    assert all(Image.open(path).size == (400, 200) for path in outputs)
+
+
 def test_core_renderer_requires_output_sentinel(tmp_path, monkeypatch) -> None:
     candidate = tmp_path / "candidate.dwg"
     candidate.write_bytes(b"dwg")

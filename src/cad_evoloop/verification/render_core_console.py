@@ -8,12 +8,45 @@ import shutil
 import subprocess
 import tempfile
 
+from PIL import Image
+
 from .extract_core_console import core_console_command, decode_console_output, lisp_path
 
 
 def scene_has_3d(scene: dict) -> bool:
     counts = scene.get("summary", {}).get("type_counts", {})
     return any(counts.get(name, 0) > 0 for name in ("AcDb3dSolid", "AcDbBody", "AcDbRegion"))
+
+
+def scene_needs_detail_views(scene: dict, entity_threshold: int = 150) -> bool:
+    """Identify dense planar drawings whose labels are too small in a full-sheet render."""
+    count = int(scene.get("summary", {}).get("entity_count", 0) or 0)
+    return not scene_has_3d(scene) and count >= entity_threshold
+
+
+def render_detail_views(image_path: str | Path, output_dir: str | Path) -> list[Path]:
+    """Create overlapping, full-resolution quadrants for visual inspection of dense sheets."""
+    image_path = Path(image_path).resolve()
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image = Image.open(image_path).convert("RGB")
+    width, height = image.size
+    boxes = (
+        (0.0, 0.0, 0.58, 0.58),
+        (0.42, 0.0, 1.0, 0.58),
+        (0.0, 0.42, 0.58, 1.0),
+        (0.42, 0.42, 1.0, 1.0),
+    )
+    outputs = []
+    for index, (left, top, right, bottom) in enumerate(boxes, start=1):
+        crop = image.crop((
+            round(left * width), round(top * height),
+            round(right * width), round(bottom * height),
+        )).resize((width, height), Image.Resampling.LANCZOS)
+        output = output_dir / f"candidate-detail-{index:02d}.png"
+        crop.save(output)
+        outputs.append(output)
+    return outputs
 
 
 def render_lisp(output: Path, sentinel: Path, view: str = "top") -> str:

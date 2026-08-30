@@ -33,7 +33,12 @@ from cad_evoloop.protocol import build_diagnostic
 from cad_evoloop.supervisor import AdaptiveSession
 from cad_evoloop.verification.vlm.evaluate import evaluate_visual_gaps
 from cad_evoloop.verification.vlm.render_scene import render_scene
-from cad_evoloop.verification.render_core_console import render_dwg_core, scene_has_3d
+from cad_evoloop.verification.render_core_console import (
+    render_detail_views,
+    render_dwg_core,
+    scene_has_3d,
+    scene_needs_detail_views,
+)
 
 
 DEFAULT_MODELS = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
@@ -620,6 +625,13 @@ def run_job(
                     render_dwg_core(candidate, candidate_render, view="top")
                 except Exception:
                     render_scene(scene_value, candidate_render)
+                candidate_details = []
+                candidate_semantic = attempt_dir / "candidate-semantic.png"
+                if scene_needs_detail_views(scene_value):
+                    candidate_details = render_detail_views(candidate_render, attempt_dir)
+                    candidate_images.extend(candidate_details)
+                    render_scene(scene_value, candidate_semantic, 1600, 1200)
+                    candidate_images.append(candidate_semantic)
                 if scene_has_3d(scene_value):
                     try:
                         render_dwg_core(candidate, candidate_isometric, view="isometric")
@@ -638,6 +650,12 @@ def run_job(
                     max_evaluations=vlm_max_evaluations,
                 )
                 ledger.add_artifact(run_dir, attempt_id, candidate_render, role="candidate-render")
+                for detail in candidate_details:
+                    ledger.add_artifact(run_dir, attempt_id, detail, role="candidate-render-detail")
+                if candidate_semantic.is_file():
+                    ledger.add_artifact(
+                        run_dir, attempt_id, candidate_semantic, role="candidate-render-semantic",
+                    )
                 if candidate_isometric.is_file():
                     ledger.add_artifact(run_dir, attempt_id, candidate_isometric, role="candidate-render")
                 ledger.add_artifact(run_dir, attempt_id, visual_path, role="vlm-verdict")

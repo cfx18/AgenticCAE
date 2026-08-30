@@ -13,7 +13,12 @@ from .isolation import sha256_file
 from .metrics import evidence_qualified_completion
 from ..paths import project_root
 from ..verification.extract_core_console import extract_dwg_core
-from ..verification.render_core_console import render_dwg_core, scene_has_3d
+from ..verification.render_core_console import (
+    render_detail_views,
+    render_dwg_core,
+    scene_has_3d,
+    scene_needs_detail_views,
+)
 from ..verification.verify import verify_scene
 from ..verification.vlm.evaluate import evaluate_visual_gaps
 from ..verification.vlm.render_scene import render_scene
@@ -107,6 +112,8 @@ def replay_verifier(
     confidence_threshold: float = 0.85,
     max_evaluations: int = 3,
     max_jobs: int | None = None,
+    sample_ids: set[str] | None = None,
+    models: set[str] | None = None,
 ) -> dict[str, Any]:
     baseline_campaign = Path(baseline_campaign).resolve()
     output_dir = Path(output_dir).resolve()
@@ -117,8 +124,14 @@ def replay_verifier(
     )
     validate_campaign_manifest(baseline_manifest)
     baseline_results = json.loads((baseline_campaign / "results.json").read_text(encoding="utf-8"))
+    if sample_ids is not None:
+        baseline_results = [item for item in baseline_results if item["sample_id"] in sample_ids]
+    if models is not None:
+        baseline_results = [item for item in baseline_results if item["model"] in models]
     if max_jobs is not None:
         baseline_results = baseline_results[:max_jobs]
+    if not baseline_results:
+        raise ValueError("Verifier replay filters selected no baseline jobs")
     jobs = []
     for item in baseline_results:
         candidate, candidate_sha256 = ledger_candidate_snapshot(eval_root, item)
@@ -170,8 +183,10 @@ def replay_verifier(
         isometric_path = job_dir / "candidate-isometric.png"
         visual_path = job_dir / "visual-verdict.json"
         final_path = job_dir / "verdict.json"
+        semantic_path = job_dir / "candidate-semantic.png"
         errors: list[str] = []
         visual = None
+        detail_paths: list[Path] = []
         try:
             scene = extract_dwg_core(candidate)
             scene_path.write_text(json.dumps(scene, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -187,6 +202,11 @@ def replay_verifier(
                 errors.append(f"native-render: {exc!r}")
                 render_scene(scene, render_path)
             candidate_images = [render_path]
+            if scene_needs_detail_views(scene):
+                detail_paths = render_detail_views(render_path, job_dir)
+                candidate_images.extend(detail_paths)
+                render_scene(scene, semantic_path, 1600, 1200)
+                candidate_images.append(semantic_path)
             if scene_has_3d(scene):
                 try:
                     render_dwg_core(candidate, isometric_path, view="isometric")
@@ -234,7 +254,10 @@ def replay_verifier(
             new_eqc = None
             coverage = None
         artifacts = {}
-        for path in (scene_path, deterministic_path, render_path, isometric_path, visual_path, final_path):
+        for path in (
+            scene_path, deterministic_path, render_path, *detail_paths,
+            semantic_path, isometric_path, visual_path, final_path,
+        ):
             if path.is_file():
                 artifacts[path.name] = {"sha256": sha256_file(path), "bytes": path.stat().st_size}
         row = {
