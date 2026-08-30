@@ -13,7 +13,7 @@ from .isolation import sha256_file
 from .metrics import evidence_qualified_completion
 from ..paths import project_root
 from ..verification.extract_core_console import extract_dwg_core
-from ..verification.render_core_console import render_dwg_core
+from ..verification.render_core_console import render_dwg_core, scene_has_3d
 from ..verification.verify import verify_scene
 from ..verification.vlm.evaluate import evaluate_visual_gaps
 from ..verification.vlm.render_scene import render_scene
@@ -113,7 +113,8 @@ def replay_verifier(
         candidate = baseline_job / "candidate.dwg"
         scene_path = job_dir / "scene.json"
         deterministic_path = job_dir / "deterministic-verdict.json"
-        render_path = job_dir / "candidate-native.png"
+        render_path = job_dir / "candidate-top.png"
+        isometric_path = job_dir / "candidate-isometric.png"
         visual_path = job_dir / "visual-verdict.json"
         final_path = job_dir / "verdict.json"
         errors: list[str] = []
@@ -128,10 +129,17 @@ def replay_verifier(
                 json.dumps(deterministic, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
             )
             try:
-                render_dwg_core(candidate, render_path)
+                render_dwg_core(candidate, render_path, view="top")
             except Exception as exc:
                 errors.append(f"native-render: {exc!r}")
                 render_scene(scene, render_path)
+            candidate_images = [render_path]
+            if scene_has_3d(scene):
+                try:
+                    render_dwg_core(candidate, isometric_path, view="isometric")
+                    candidate_images.append(isometric_path)
+                except Exception as exc:
+                    errors.append(f"isometric-render: {exc!r}")
             unverified = [
                 item for item in deterministic.get("rubrics", [])
                 if item.get("status") == "unverified"
@@ -144,7 +152,7 @@ def replay_verifier(
                 visual = evaluate_visual_gaps(
                     sample_dir=sample_dir,
                     deterministic_path=deterministic_path,
-                    candidate_images=[render_path],
+                    candidate_images=candidate_images,
                     reference_images=references,
                     output=visual_path,
                     work_dir=job_dir / "vlm-work",
@@ -163,7 +171,7 @@ def replay_verifier(
             new_eqc = None
             coverage = None
         artifacts = {}
-        for path in (scene_path, deterministic_path, render_path, visual_path, final_path):
+        for path in (scene_path, deterministic_path, render_path, isometric_path, visual_path, final_path):
             if path.is_file():
                 artifacts[path.name] = {"sha256": sha256_file(path), "bytes": path.stat().st_size}
         row = {
@@ -187,4 +195,3 @@ def replay_verifier(
     summary = replay_summary(results)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return {"manifest_sha256": manifest["manifest_sha256"], **summary}
-

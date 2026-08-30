@@ -82,7 +82,19 @@ def test_core_renderer_uses_noninteractive_native_png_export(tmp_path) -> None:
     assert '(setvar "FILEDIA" 0)' in lisp
     assert '"_.PNGOUT"' in lisp
     assert '(ssget "_X" \'((410 . "Model")))' in lisp
-    assert '"_.VPOINT" "1,-1,1"' in lisp
+    assert '"_.VPOINT" "0,0,1"' in lisp
+    assert '"_.VPOINT" "1,-1,1"' in CORE_RENDERER.render_lisp(
+        tmp_path / "candidate.png", tmp_path / "done", "isometric",
+    )
+
+
+def test_core_renderer_detects_native_3d_entities() -> None:
+    assert CORE_RENDERER.scene_has_3d({
+        "summary": {"type_counts": {"AcDb3dSolid": 1}},
+    })
+    assert not CORE_RENDERER.scene_has_3d({
+        "summary": {"type_counts": {"AcDbLine": 20}},
+    })
 
 
 def test_core_renderer_requires_output_sentinel(tmp_path, monkeypatch) -> None:

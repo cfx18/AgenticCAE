@@ -32,7 +32,7 @@ from cad_evoloop.protocol import build_diagnostic
 from cad_evoloop.supervisor import AdaptiveSession
 from cad_evoloop.verification.vlm.evaluate import evaluate_visual_gaps
 from cad_evoloop.verification.vlm.render_scene import render_scene
-from cad_evoloop.verification.render_core_console import render_dwg_core
+from cad_evoloop.verification.render_core_console import render_dwg_core, scene_has_3d
 
 
 DEFAULT_MODELS = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
@@ -604,6 +604,7 @@ def run_job(
         visual_value = None
         visual_path = attempt_dir / "visual-verdict.json"
         candidate_render = attempt_dir / "candidate-render.png"
+        candidate_isometric = attempt_dir / "candidate-render-isometric.png"
         visual_verifier_failed = False
         unverified_rubrics = [
             item for item in verdict_value.get("rubrics", [])
@@ -611,15 +612,22 @@ def run_job(
         ]
         if enable_vlm and unverified_rubrics:
             try:
+                scene_value = json.loads(scene_path.read_text(encoding="utf-8"))
+                candidate_images = [candidate_render]
                 try:
-                    render_dwg_core(candidate, candidate_render)
+                    render_dwg_core(candidate, candidate_render, view="top")
                 except Exception:
-                    scene_value = json.loads(scene_path.read_text(encoding="utf-8"))
                     render_scene(scene_value, candidate_render)
+                if scene_has_3d(scene_value):
+                    try:
+                        render_dwg_core(candidate, candidate_isometric, view="isometric")
+                        candidate_images.append(candidate_isometric)
+                    except Exception as exc:
+                        attempt_metrics["errors"].append(f"Isometric render unavailable: {exc!r}")
                 visual_value = evaluate_visual_gaps(
                     sample_dir=sample_dir,
                     deterministic_path=verdict_path,
-                    candidate_images=[candidate_render],
+                    candidate_images=candidate_images,
                     reference_images=images,
                     output=visual_path,
                     work_dir=attempt_dir / "vlm-work",
@@ -627,6 +635,8 @@ def run_job(
                     confidence_threshold=vlm_confidence,
                 )
                 ledger.add_artifact(run_dir, attempt_id, candidate_render, role="candidate-render")
+                if candidate_isometric.is_file():
+                    ledger.add_artifact(run_dir, attempt_id, candidate_isometric, role="candidate-render")
                 ledger.add_artifact(run_dir, attempt_id, visual_path, role="vlm-verdict")
                 attempt_metrics["vlm_usage"] = visual_value["provider"].get("usage", {})
                 for key in ("events_path", "stderr_path", "result_path"):

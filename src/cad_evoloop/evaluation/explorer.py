@@ -9,7 +9,7 @@ from typing import Any
 
 from .campaign import validate_campaign_manifest
 from .report import summarize_campaign
-from ..verification.render_core_console import render_dwg_core
+from ..verification.render_core_console import render_dwg_core, scene_has_3d
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -73,7 +73,10 @@ def generate_explorer_bundle(
         native_output = assets / f"{sample_id[:8]}-{_slug(result['model'])}.png"
         if render_native:
             try:
-                render_dwg_core(job_dir / "candidate.dwg", native_output)
+                scene_path = job_dir / "scene.json"
+                scene = json.loads(scene_path.read_text(encoding="utf-8")) if scene_path.is_file() else {}
+                view = "isometric" if scene_has_3d(scene) else "top"
+                render_dwg_core(job_dir / "candidate.dwg", native_output, view=view)
             except Exception as exc:
                 render_error = repr(exc)
         if native_output.is_file():
@@ -132,4 +135,3 @@ def generate_explorer_bundle(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
     )
     return payload
-
