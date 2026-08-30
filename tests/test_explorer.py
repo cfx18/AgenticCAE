@@ -16,6 +16,7 @@ def test_explorer_bundle_uses_cached_candidate_and_evidence(tmp_path: Path) -> N
     attempt = job / "attempts/a001"
     for path in (campaign, sample / "input_files", attempt):
         path.mkdir(parents=True, exist_ok=True)
+    (eval_root / "manifest.json").write_text("{}", encoding="utf-8")
     (sample / "task_desc.json").write_text(json.dumps({"domain": "Mechanical", "task": "Draw part"}), encoding="utf-8")
     (job / "input_files").mkdir()
     (job / "input_files/reference.png").write_bytes(b"png")

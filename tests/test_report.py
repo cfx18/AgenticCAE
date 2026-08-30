@@ -51,3 +51,33 @@ def test_campaign_report_is_manifest_bound_and_reproducible(tmp_path: Path) -> N
     }
     assert manifest["manifest_sha256"] in (output / "report.md").read_text(encoding="utf-8")
     assert "<svg" in (output / "eqc-by-sample.svg").read_text(encoding="utf-8")
+
+
+def test_campaign_report_supports_verifier_replay_results(tmp_path: Path) -> None:
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    body = {
+        "schema_version": "1.0", "campaign_id": "replay", "mode": "pilot",
+        "models": [{"name": "model-a"}],
+        "execution": {
+            "type": "verifier-replay",
+            "jobs": [{"sample_id": "sample-1", "model": "model-a"}],
+        },
+    }
+    manifest = {**body, "manifest_sha256": value_digest(body)}
+    results = [{
+        "sample_id": "sample-1", "model": "model-a", "status": "passed",
+        "old_eqc": 50, "new_eqc": 100, "coverage": 100,
+        "candidate_sha256": "abc", "errors": [], "artifacts": {},
+        "elapsed_seconds": 2,
+    }]
+    (campaign / "campaign-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (campaign / "results.json").write_text(json.dumps(results), encoding="utf-8")
+
+    summary = generate_campaign_report(campaign, tmp_path / "report")
+
+    assert summary["first_attempt_mean_eqc"] == 50
+    assert summary["mean_eqc"] == 100
+    report = (tmp_path / "report/report.md").read_text(encoding="utf-8")
+    assert "Baseline mean EQC" in report
+    assert "Verifier Replay" in (tmp_path / "report/recovery-scatter.svg").read_text(encoding="utf-8")

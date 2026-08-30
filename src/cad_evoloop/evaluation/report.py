@@ -26,16 +26,24 @@ def _vlm_usage(result: dict[str, Any], key: str) -> int:
 def campaign_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for result in results:
+        replay = "new_eqc" in result
         attempts = result.get("attempts", [])
-        first_eqc = float(attempts[0].get("eqc", 0.0)) if attempts else 0.0
-        final_eqc = float(result.get("eqc", 0.0) or 0.0)
+        first_eqc = (
+            float(result.get("old_eqc", 0.0) or 0.0)
+            if replay else float(attempts[0].get("eqc", 0.0)) if attempts else 0.0
+        )
+        final_eqc = float(
+            result.get("new_eqc", 0.0) if replay else result.get("eqc", 0.0) or 0.0
+        )
         last_attempt = attempts[-1].get("attempt_id") if attempts else None
         rows.append({
             "sample_id": result["sample_id"],
             "model": result["model"],
             "status": result.get("status", "unknown"),
             "eqc": final_eqc,
-            "legacy_score": float(result.get("score", 0.0) or 0.0),
+            "legacy_score": float(
+                result.get("old_eqc", 0.0) if replay else result.get("score", 0.0) or 0.0
+            ),
             "deterministic_coverage": float(result.get("coverage", 0.0) or 0.0),
             "attempts": len(attempts),
             "first_eqc": first_eqc,
@@ -48,7 +56,11 @@ def campaign_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "agent_output_tokens": _usage(result, "output_tokens"),
             "vlm_input_tokens": _vlm_usage(result, "input_tokens"),
             "vlm_output_tokens": _vlm_usage(result, "output_tokens"),
-            "integrity_ok": result.get("integrity", {}).get("ok") is True,
+            "integrity_ok": (
+                not result.get("errors")
+                and result.get("new_eqc") is not None
+                and bool(result.get("candidate_sha256"))
+            ) if replay else result.get("integrity", {}).get("ok") is True,
         })
     return rows
 
@@ -150,14 +162,20 @@ def render_eqc_by_sample(rows: list[dict[str, Any]], models: list[str]) -> str:
     return "".join(parts)
 
 
-def render_recovery_scatter(rows: list[dict[str, Any]], models: list[str]) -> str:
+def render_recovery_scatter(
+    rows: list[dict[str, Any]], models: list[str],
+    *,
+    title: str = "Verifier-Guided Recovery",
+    x_label: str = "First-attempt EQC (%)",
+    y_label: str = "Selected EQC (%)",
+) -> str:
     width, height = 720, 660
     left, right, top, bottom = 82, 35, 52, 72
     plot_w, plot_h = width - left - right, height - top - bottom
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#FFFFFF"/>',
-        _svg_text(left, 28, "Verifier-Guided Recovery", font_family="Arial", font_size="20", font_weight="700", fill="#171717"),
+        _svg_text(left, 28, title, font_family="Arial", font_size="20", font_weight="700", fill="#171717"),
     ]
     legend_x = width - right - 275
     for index, model in enumerate(models):
@@ -178,8 +196,8 @@ def render_recovery_scatter(rows: list[dict[str, Any]], models: list[str]) -> st
         y = top + plot_h * (1 - row["eqc"] / 100)
         color = MODEL_COLORS[model_index[row["model"]] % len(MODEL_COLORS)]
         parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="6" fill="{color}" fill-opacity="0.78" stroke="#FFFFFF" stroke-width="1.5"><title>{html.escape(row["sample_id"][:8])}: {row["first_eqc"]:.2f} to {row["eqc"]:.2f}</title></circle>')
-    parts.append(_svg_text(left + plot_w / 2, height - 18, "First-attempt EQC (%)", text_anchor="middle", font_family="Arial", font_size="13", fill="#333333"))
-    parts.append(_svg_text(20, top + plot_h / 2, "Selected EQC (%)", transform=f"rotate(-90 20 {top + plot_h / 2:.1f})", text_anchor="middle", font_family="Arial", font_size="13", fill="#333333"))
+    parts.append(_svg_text(left + plot_w / 2, height - 18, x_label, text_anchor="middle", font_family="Arial", font_size="13", fill="#333333"))
+    parts.append(_svg_text(20, top + plot_h / 2, y_label, transform=f"rotate(-90 20 {top + plot_h / 2:.1f})", text_anchor="middle", font_family="Arial", font_size="13", fill="#333333"))
     parts.append("</svg>\n")
     return "".join(parts)
 
@@ -190,6 +208,7 @@ def generate_campaign_report(campaign_dir: Path, output_dir: Path) -> dict[str, 
     results = json.loads((campaign_dir / "results.json").read_text(encoding="utf-8"))
     summary = summarize_campaign(manifest, results)
     rows = campaign_rows(results)
+    replay = manifest.get("execution", {}).get("type") == "verifier-replay"
     models = [item["name"] for item in manifest["models"]]
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -199,7 +218,12 @@ def generate_campaign_report(campaign_dir: Path, output_dir: Path) -> dict[str, 
         writer.writeheader()
         writer.writerows(rows)
     (output_dir / "eqc-by-sample.svg").write_text(render_eqc_by_sample(rows, models), encoding="utf-8")
-    (output_dir / "recovery-scatter.svg").write_text(render_recovery_scatter(rows, models), encoding="utf-8")
+    (output_dir / "recovery-scatter.svg").write_text(render_recovery_scatter(
+        rows, models,
+        title="Verifier Replay: Baseline vs Evidence-Fused EQC" if replay else "Verifier-Guided Recovery",
+        x_label="Baseline EQC (%)" if replay else "First-attempt EQC (%)",
+        y_label="Evidence-fused EQC (%)" if replay else "Selected EQC (%)",
+    ), encoding="utf-8")
     model_lines = [
         f"| {item['model']} | {item['runs']} | {item['passed']} | {item['mean_eqc']:.2f} | {item['median_eqc']:.2f} | {item['mean_attempts']:.2f} |"
         for item in summary["per_model"]
@@ -210,8 +234,17 @@ def generate_campaign_report(campaign_dir: Path, output_dir: Path) -> dict[str, 
         f"Manifest SHA-256: `{summary['manifest_sha256']}`",
         "",
         f"Runs: {summary['runs']}; strict passes: {summary['passed']} ({summary['pass_rate']:.2f}%); mean EQC: {summary['mean_eqc']:.2f}.",
-        f"First-attempt mean EQC: {summary['first_attempt_mean_eqc']:.2f}; mean recovery gain: {summary['mean_recovery_gain']:.2f} points.",
-        f"Runs improved: {summary['runs_improved']}; best-checkpoint rollbacks: {summary['selected_not_last']}; attempts: {summary['attempts']}.",
+        (
+            f"Baseline mean EQC: {summary['first_attempt_mean_eqc']:.2f}; verifier delta: "
+            f"{summary['mean_recovery_gain']:.2f} points."
+            if replay else
+            f"First-attempt mean EQC: {summary['first_attempt_mean_eqc']:.2f}; mean recovery gain: {summary['mean_recovery_gain']:.2f} points."
+        ),
+        (
+            f"Runs improved: {summary['runs_improved']}; verifier-only jobs: {summary['runs']}."
+            if replay else
+            f"Runs improved: {summary['runs_improved']}; best-checkpoint rollbacks: {summary['selected_not_last']}; attempts: {summary['attempts']}."
+        ),
         "",
         "| Model | Runs | Passed | Mean EQC | Median EQC | Mean attempts |",
         "|---|---:|---:|---:|---:|---:|",
