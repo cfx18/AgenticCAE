@@ -13,6 +13,7 @@ from .evaluation.campaign import validate_campaign_manifest
 from .evaluation.metrics import main as metrics_main
 from .evaluation.report import generate_campaign_report
 from .evaluation.explorer import generate_explorer_bundle
+from .evaluation.replay import replay_verifier
 from .paths import project_root
 
 
@@ -70,6 +71,26 @@ def _export_explorer() -> None:
     }, ensure_ascii=False))
 
 
+def _replay_verifier() -> None:
+    parser = argparse.ArgumentParser(description="Replay cached DWGs through a verifier profile")
+    parser.add_argument("baseline_campaign", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--campaign", required=True)
+    parser.add_argument("--vlm-model", default="gpt-5.5")
+    parser.add_argument("--vlm-confidence", type=float, default=0.85)
+    parser.add_argument("--max-jobs", type=int)
+    args = parser.parse_args()
+    summary = replay_verifier(
+        args.baseline_campaign,
+        args.output,
+        campaign_id=args.campaign,
+        vlm_model=args.vlm_model,
+        confidence_threshold=args.vlm_confidence,
+        max_jobs=args.max_jobs,
+    )
+    print(json.dumps(summary, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -79,6 +100,7 @@ def main() -> None:
         "campaign-verify": (_verify_campaign, "validate a campaign manifest"),
         "report": (_report_campaign, "generate campaign tables and paper-ready figures"),
         "explorer-export": (_export_explorer, "export cached trajectories for the Run Explorer"),
+        "verifier-replay": (_replay_verifier, "replay cached DWGs without redrawing"),
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=commands)

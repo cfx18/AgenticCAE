@@ -76,4 +76,10 @@ cad-evoloop-batch --campaign paper-01 --all-samples --protocol-mode frozen-evalu
 cad-evoloop-eqc --verdict path/to/verdict.json --output path/to/eqc.json
 cad-evoloop campaign-verify path/to/campaign-manifest.json
 cad-evoloop report path/to/campaign --output reports/generated/campaign-name
+cad-evoloop verifier-replay path/to/campaign --campaign calibration-name `
+  --output evals/cad-1000-hours/improvement/campaigns/calibration-name
 ```
+
+`verifier-replay` reuses the selected native DWG checkpoints from a completed
+campaign. It freezes a new verifier manifest and recomputes deterministic,
+native-render, visual, and fused evidence without invoking the drawing agent.

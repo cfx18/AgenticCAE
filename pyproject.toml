@@ -27,6 +27,7 @@ cad-evoloop-improve = "cad_evoloop.cli:improve"
 cad-evoloop-eqc = "cad_evoloop.cli:eqc"
 cad-evoloop-report = "cad_evoloop.cli:_report_campaign"
 cad-evoloop-explorer-export = "cad_evoloop.cli:_export_explorer"
+cad-evoloop-verifier-replay = "cad_evoloop.cli:_replay_verifier"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

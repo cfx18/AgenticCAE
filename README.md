@@ -43,6 +43,9 @@ cad-evoloop campaign-verify evals/cad-1000-hours/batch/pilot-01/campaign-manifes
 cad-evoloop report evals/cad-1000-hours/batch/pilot-01 --output reports/generated/pilot-01
 cad-evoloop explorer-export evals/cad-1000-hours/batch/pilot-01 `
   --output reports/generated/pilot-01/explorer --render-native
+cad-evoloop verifier-replay evals/cad-1000-hours/batch/pilot-01 `
+  --campaign verifier-calibration-01 `
+  --output evals/cad-1000-hours/improvement/campaigns/verifier-calibration-01
 ```
 
 Every campaign seals model and execution settings, source hashes, split membership,
