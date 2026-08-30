@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "campaign": "geometry-50-pilot-v2",
+  "date": "2026-08-30",
+  "source_commit": "eaedfa3",
+  "campaign_manifest_sha256": "b4a04f3c42831e82a2eaa00a3c7448cd02908888121052edbbb4414bf6f1bd5a",
+  "source_manifest_sha256": "41b3e9c9e472bd118f65a8556ee2855a1b7a6f7297ea598a9bafb9dc817c28aa",
+  "sample_id": "ortho2cad:00675497",
+  "input_image_sha256": "f78ca9a5016d002791288291d37d93570a7c7d488fc7cb9025e94d45ffab88f2",
+  "ground_truth_sha256": "eba0872ca7c3d392fb200c51b1097e24ab454f4892fc0297137c04e8c4bf8e05",
+  "candidate_sha256": "23a2fbaf7bafdc20e75071cac15d060d9f00b20a62777a0fc2133c8d23abc85a",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "selected_attempt_id": "a001",
+  "attempts": 1,
+  "elapsed_seconds": 112.487,
+  "strict_pass": true,
+  "quality_tier": "strict",
+  "score": 100.0,
+  "metrics": {
+    "voxel_iou": 1.0,
+    "normalized_chamfer": 0.002433,
+    "bbox_relative_error": 0.00059,
+    "volume_relative_error": 0.001504,
+    "surface_area_relative_error": 0.000153
+  },
+  "candidate_extents": [0.6719, 0.2475, 0.0313],
+  "ground_truth_extents": [0.671875, 0.247533, 0.03125],
+  "usage": {
+    "input_tokens": 190192,
+    "cached_input_tokens": 170624,
+    "output_tokens": 2805,
+    "reasoning_output_tokens": 895
+  },
+  "ledger_integrity": {
+    "ok": true,
+    "checked_files": 19,
+    "events": 16
+  },
+  "ground_truth_path_exposed_to_agent": false,
+  "notes": [
+    "This run used the committed runner at source_commit and local AutoCAD Core Console only.",
+    "All five strict geometry checks passed on the first attempt without human intervention."
+  ]
+}

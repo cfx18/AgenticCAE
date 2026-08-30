@@ -39,6 +39,14 @@ cad-evoloop geometry-calibrate .local/datasets/evocad/materialized/geometry-pilo
   --output .local/datasets/evocad/geometry-runs/calibration.json
 ```
 
+The 50-sample strict split uses only sources with STEP ground truth:
+
+```powershell
+cad-evoloop geometry-materialize `
+  --output .local/datasets/evocad/materialized/geometry-50-v1 `
+  --bench-count 0 --ortho-count 40 --omni-count 10
+```
+
 Protocol `evocad-geometry-v2` permits translation and the 24 right-handed axis
 orientations, but never scale. Strict passage requires a watertight candidate,
 voxel IoU at least 0.99, normalized symmetric Chamfer at most 0.006, mean
