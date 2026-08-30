@@ -11,6 +11,7 @@ from typing import Callable
 
 from .evaluation.campaign import validate_campaign_manifest
 from .evaluation.metrics import main as metrics_main
+from .evaluation.report import generate_campaign_report
 from .paths import project_root
 
 
@@ -43,6 +44,15 @@ def _verify_campaign() -> None:
     print(json.dumps({"valid": True, "manifest_sha256": value["manifest_sha256"]}))
 
 
+def _report_campaign() -> None:
+    parser = argparse.ArgumentParser(description="Generate an auditable campaign report")
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    summary = generate_campaign_report(args.campaign_dir, args.output)
+    print(json.dumps(summary, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -50,6 +60,7 @@ def main() -> None:
         "improve": (improve, "manage system improvement proposals"),
         "eqc": (eqc, "compute evidence-qualified completion"),
         "campaign-verify": (_verify_campaign, "validate a campaign manifest"),
+        "report": (_report_campaign, "generate campaign tables and paper-ready figures"),
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=commands)

@@ -109,8 +109,18 @@ def evaluate_rubric(requirement: str, scene: dict[str, Any]) -> tuple[str, list[
         count = sum(types.get(name, 0) for name in HATCH_TYPES)
         checks.append((count > 0, f"hatch entities: {count}"))
     if "dimension" in lower or "annotation" in lower:
-        count = sum(count for name, count in types.items() if any(token in name for token in DIMENSION_TYPES))
+        dimensions = [
+            entity for entity in scene.get("entities", [])
+            if any(token in entity.get("type", "") for token in DIMENSION_TYPES)
+        ]
+        count = len(dimensions)
         checks.append((count > 0, f"dimension entities: {count}"))
+        if "iso-25" in lower:
+            styled = [
+                str(entity.get("Handle", "unknown")) for entity in dimensions
+                if str(entity.get("DimStyle", "")).casefold() == "iso-25"
+            ]
+            checks.append((bool(styled), f"ISO-25 dimension handles: {styled}"))
     if "3d solid" in lower or "single solid" in lower:
         count = sum(types.get(name, 0) for name in SOLID_TYPES)
         expected_single = "single" in lower
@@ -132,11 +142,25 @@ def evaluate_rubric(requirement: str, scene: dict[str, Any]) -> tuple[str, list[
         ]
         checks.append((bool(model_entities) and not off_layer, f"model entities off Layer 0: {off_layer}"))
     elif "layer" in lower:
-        count = len(scene.get("layers", []))
+        layers = scene.get("layers", [])
+        count = len(layers)
         checks.append((count > 1, f"layers: {count}"))
+        layer_tokens = [
+            f"{layer.get('Name', '')} {layer.get('Linetype', '')}".casefold()
+            for layer in layers
+        ]
+        if "hidden" in lower:
+            hidden = [token for token in layer_tokens if "hidden" in token]
+            checks.append((bool(hidden), f"hidden-line layers: {hidden}"))
+        if "continuous" in lower:
+            continuous = [token for token in layer_tokens if "continuous" in token]
+            checks.append((bool(continuous), f"continuous-line layers: {continuous}"))
     if "layout" in lower or "paper-space" in lower or "paper space" in lower:
         paper = [layout for layout in scene.get("layouts", []) if not layout.get("model_type")]
         checks.append((any(layout.get("entity_count", 0) > 0 for layout in paper), f"paper layouts: {len(paper)}"))
+        if "layout1" in lower:
+            named = [layout for layout in paper if str(layout.get("name", "")).casefold() == "layout1"]
+            checks.append((any(layout.get("entity_count", 0) > 0 for layout in named), f"nonempty Layout1 entries: {len(named)}"))
 
     if not checks:
         return "unverified", []

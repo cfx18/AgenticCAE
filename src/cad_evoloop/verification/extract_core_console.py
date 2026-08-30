@@ -24,7 +24,21 @@ TYPE_NAMES = {
     "3DSOLID": "AcDb3dSolid",
     "REGION": "AcDbRegion",
     "INSERT": "AcDbBlockReference",
+    "ELLIPSE": "AcDbEllipse",
+    "SPLINE": "AcDbSpline",
+    "VIEWPORT": "AcDbViewport",
+    "LEADER": "AcDbLeader",
+    "MULTILEADER": "AcDbMLeader",
+    "ACAD_TABLE": "AcDbTable",
 }
+
+
+def decode_console_output(value: bytes) -> str:
+    if not value:
+        return ""
+    if value.count(b"\x00") > len(value) // 4:
+        return value.decode("utf-16-le", errors="replace")
+    return value.decode("utf-8", errors="replace")
 
 
 def lisp_path(path: Path) -> str:
@@ -36,18 +50,34 @@ def extractor_lisp(output: Path) -> str:
 (setq mcp-f (open "{lisp_path(output)}" "w"))
 (defun mcp-n (x) (rtos x 2 8))
 (defun mcp-p (p) (strcat (mcp-n (car p)) "," (mcp-n (cadr p)) "," (mcp-n (if (caddr p) (caddr p) 0.0))))
+(defun mcp-bbox-inner (e / obj minp maxp)
+  (setq obj (vlax-ename->vla-object e))
+  (vla-getboundingbox obj 'minp 'maxp)
+  (strcat (mcp-p (vlax-safearray->list minp)) "\t" (mcp-p (vlax-safearray->list maxp))))
+(defun mcp-bbox (e / result)
+  (setq result (vl-catch-all-apply 'mcp-bbox-inner (list e)))
+  (if (vl-catch-all-error-p result)
+    "\t"
+    result))
 (write-line (strcat "INSUNITS\t" (itoa (getvar "INSUNITS"))) mcp-f)
+(write-line "LAYOUT\tModel\t1" mcp-f)
 (setq mcp-r (tblnext "LAYER" T))
 (while mcp-r
-  (write-line (strcat "LAYER\t" (cdr (assoc 2 mcp-r))) mcp-f)
+  (write-line (strcat "LAYER\t" (cdr (assoc 2 mcp-r)) "\t" (cdr (assoc 6 mcp-r))) mcp-f)
   (setq mcp-r (tblnext "LAYER")))
-(setq mcp-ss (ssget "_X" '((410 . "Model"))))
+(setq mcp-r (tblnext "DIMSTYLE" T))
+(while mcp-r
+  (write-line (strcat "DIMSTYLE\t" (cdr (assoc 2 mcp-r))) mcp-f)
+  (setq mcp-r (tblnext "DIMSTYLE")))
+(setq mcp-ss (ssget "_X"))
 (if mcp-ss
   (progn
     (setq mcp-i 0)
     (repeat (sslength mcp-ss)
       (setq mcp-e (ssname mcp-ss mcp-i) mcp-d (entget mcp-e)
-            mcp-t (cdr (assoc 0 mcp-d)) mcp-extra "")
+            mcp-t (cdr (assoc 0 mcp-d)) mcp-extra ""
+            mcp-owner (cdr (assoc 410 mcp-d)))
+      (if (not mcp-owner) (setq mcp-owner "Model"))
       (cond
         ((= mcp-t "LINE") (setq mcp-extra (strcat (mcp-p (cdr (assoc 10 mcp-d))) "\t" (mcp-p (cdr (assoc 11 mcp-d))))))
         ((= mcp-t "CIRCLE") (setq mcp-extra (strcat (mcp-p (cdr (assoc 10 mcp-d))) "\t" (mcp-n (cdr (assoc 40 mcp-d))))))
@@ -57,9 +87,11 @@ def extractor_lisp(output: Path) -> str:
         ((= mcp-t "DIMENSION")
           ;; DXF group 42 is the actual measurement and works without desktop ActiveX.
           (setq mcp-v (cdr (assoc 42 mcp-d)))
-          (if (numberp mcp-v) (setq mcp-extra (mcp-n mcp-v)))))
-      (write-line (strcat "ENT\t" mcp-t "\t" (cdr (assoc 8 mcp-d)) "\t" (cdr (assoc 5 mcp-d)) "\t" mcp-extra) mcp-f)
+          (if (numberp mcp-v)
+            (setq mcp-extra (strcat (mcp-n mcp-v) "\t" (cdr (assoc 3 mcp-d)) "\t" (itoa (cdr (assoc 70 mcp-d))))))))
+      (write-line (strcat "ENT2\t" mcp-t "\t" (cdr (assoc 8 mcp-d)) "\t" (cdr (assoc 5 mcp-d)) "\t" mcp-owner "\t" (mcp-bbox mcp-e) "\t" mcp-extra) mcp-f)
       (setq mcp-i (1+ mcp-i)))))
+(write-line "DONE" mcp-f)
 (close mcp-f)
 (princ)
 '''
@@ -72,22 +104,40 @@ def point(value: str) -> list[float]:
 def parse_scene(lines: list[str], candidate: Path) -> dict[str, Any]:
     insunits = 0
     layers = []
+    dimstyles = []
+    layout_definitions: dict[str, bool] = {}
     entities = []
     for raw in lines:
         fields = raw.rstrip("\r\n").split("\t")
         if fields[0] == "INSUNITS":
             insunits = int(fields[1])
         elif fields[0] == "LAYER":
-            layers.append({"Name": fields[1]})
-        elif fields[0] == "ENT" and len(fields) >= 4:
+            layer = {"Name": fields[1]}
+            if len(fields) >= 3 and fields[2]:
+                layer["Linetype"] = fields[2]
+            layers.append(layer)
+        elif fields[0] == "DIMSTYLE":
+            dimstyles.append({"Name": fields[1]})
+        elif fields[0] == "LAYOUT" and len(fields) >= 3:
+            layout_definitions[fields[1]] = fields[2] == "1"
+        elif fields[0] in {"ENT", "ENT2"} and len(fields) >= 4:
             dxf_type, layer, handle = fields[1:4]
-            extra = fields[4:]
+            if fields[0] == "ENT2" and len(fields) >= 7:
+                owner = fields[4] or "Model"
+                bbox_min, bbox_max = fields[5:7]
+                extra = fields[7:]
+            else:
+                owner = "Model"
+                bbox_min = bbox_max = ""
+                extra = fields[4:]
             entity: dict[str, Any] = {
                 "type": TYPE_NAMES.get(dxf_type, f"AcDb{dxf_type.title()}"),
-                "owner": "Model",
+                "owner": owner,
                 "Layer": layer,
                 "Handle": handle,
             }
+            if bbox_min and bbox_max:
+                entity["bbox"] = {"min": point(bbox_min), "max": point(bbox_max)}
             if dxf_type == "LINE" and len(extra) >= 2:
                 start, end = point(extra[0]), point(extra[1])
                 entity.update(StartPoint=start, EndPoint=end, bbox={
@@ -106,6 +156,10 @@ def parse_scene(lines: list[str], candidate: Path) -> dict[str, Any]:
                 entity.update(InsertionPoint=point(extra[0]), Height=float(extra[1]), TextString="\t".join(extra[2:]))
             elif dxf_type == "DIMENSION" and extra and extra[0]:
                 entity["Measurement"] = float(extra[0])
+                if len(extra) >= 2 and extra[1]:
+                    entity["DimStyle"] = extra[1]
+                if len(extra) >= 3 and extra[2]:
+                    entity["DimensionType"] = int(extra[2])
             entities.append(entity)
 
     boxes = [entity["bbox"] for entity in entities if "bbox" in entity]
@@ -114,14 +168,22 @@ def parse_scene(lines: list[str], candidate: Path) -> dict[str, Any]:
         "max": [max(box["max"][axis] for box in boxes) for axis in range(3)],
     }
     counts = Counter(entity["type"] for entity in entities)
+    layout_counts = Counter(entity["owner"] for entity in entities)
+    for owner in layout_counts:
+        layout_definitions.setdefault(owner, owner.casefold() == "model")
+    if not layout_definitions:
+        layout_definitions["Model"] = True
     return {
         "document": candidate.name,
         "full_name": str(candidate),
         "insunits": insunits,
         "active_command": "",
         "layers": layers,
-        "dimstyles": [],
-        "layouts": [{"name": "Model", "model_type": True, "entity_count": len(entities)}],
+        "dimstyles": dimstyles,
+        "layouts": [
+            {"name": name, "model_type": model_type, "entity_count": layout_counts.get(name, 0)}
+            for name, model_type in layout_definitions.items()
+        ],
         "entities": entities,
         "summary": {
             "entity_count": len(entities),
@@ -161,5 +223,15 @@ def extract_dwg_core(path: str | Path, timeout: int = 120) -> dict[str, Any]:
             check=False,
         )
         if completed.returncode != 0 or not output.is_file():
-            raise RuntimeError(f"Core Console extraction failed with code {completed.returncode}")
-        return parse_scene(output.read_text(encoding="utf-8", errors="replace").splitlines(), candidate)
+            diagnostic = "\n".join(filter(None, (
+                decode_console_output(completed.stdout),
+                decode_console_output(completed.stderr),
+            )))[-4000:]
+            raise RuntimeError(
+                f"Core Console extraction failed with code {completed.returncode}: {diagnostic}"
+            )
+        lines = output.read_text(encoding="utf-8", errors="replace").splitlines()
+        if "DONE" not in lines:
+            diagnostic = decode_console_output(completed.stdout)[-4000:]
+            raise RuntimeError(f"Core Console extraction stopped before sentinel: {diagnostic}")
+        return parse_scene(lines, candidate)

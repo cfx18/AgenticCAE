@@ -25,6 +25,7 @@ cad-evoloop-batch = "cad_evoloop.cli:batch"
 cad-evoloop-ledger = "cad_evoloop.cli:ledger"
 cad-evoloop-improve = "cad_evoloop.cli:improve"
 cad-evoloop-eqc = "cad_evoloop.cli:eqc"
+cad-evoloop-report = "cad_evoloop.cli:_report_campaign"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -32,6 +32,7 @@ from cad_evoloop.protocol import build_diagnostic
 from cad_evoloop.supervisor import AdaptiveSession
 from cad_evoloop.verification.vlm.evaluate import evaluate_visual_gaps
 from cad_evoloop.verification.vlm.render_scene import render_scene
+from cad_evoloop.verification.render_core_console import render_dwg_core
 
 
 DEFAULT_MODELS = ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5")
@@ -49,6 +50,7 @@ SOURCE_PATHS = (
     WORKSPACE / "src/cad_evoloop/verification/extract_autocad.py",
     WORKSPACE / "src/cad_evoloop/verification/extract_core_console.py",
     WORKSPACE / "src/cad_evoloop/verification/verify.py",
+    WORKSPACE / "src/cad_evoloop/verification/render_core_console.py",
     WORKSPACE / "src/cad_evoloop/verification/vlm/evaluate.py",
     WORKSPACE / "src/cad_evoloop/verification/vlm/provider.py",
     WORKSPACE / "src/cad_evoloop/verification/vlm/render_scene.py",
@@ -609,8 +611,11 @@ def run_job(
         ]
         if enable_vlm and unverified_rubrics:
             try:
-                scene_value = json.loads(scene_path.read_text(encoding="utf-8"))
-                render_scene(scene_value, candidate_render)
+                try:
+                    render_dwg_core(candidate, candidate_render)
+                except Exception:
+                    scene_value = json.loads(scene_path.read_text(encoding="utf-8"))
+                    render_scene(scene_value, candidate_render)
                 visual_value = evaluate_visual_gaps(
                     sample_dir=sample_dir,
                     deterministic_path=verdict_path,

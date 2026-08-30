@@ -5,9 +5,9 @@ agents. It connects a model-driven agent to AutoCAD through an unrestricted MCP
 interface, verifies native CAD artifacts, attributes failures to the responsible
 system layer, and records versioned repair trajectories.
 
-The feasibility demo is complete. The repository is now entering research
-engineering and large-scale evaluation; current three-sample results are not a
-paper benchmark result.
+The feasibility demo and an eight-workflow, three-model development pilot are
+complete. The repository is now entering verifier calibration and larger-scale
+evaluation; pilot results are engineering evidence, not a paper benchmark.
 
 ## Current Components
 
@@ -34,11 +34,13 @@ python -m pytest -q
 ```
 
 Stable CLIs are installed as `cad-evoloop`, `cad-evoloop-batch`,
-`cad-evoloop-ledger`, `cad-evoloop-improve`, and `cad-evoloop-eqc`. For example:
+`cad-evoloop-ledger`, `cad-evoloop-improve`, `cad-evoloop-eqc`, and
+`cad-evoloop-report`. For example:
 
 ```powershell
 cad-evoloop batch --campaign pilot-01 --all-samples --protocol-mode pilot
 cad-evoloop campaign-verify evals/cad-1000-hours/batch/pilot-01/campaign-manifest.json
+cad-evoloop report evals/cad-1000-hours/batch/pilot-01 --output reports/generated/pilot-01
 ```
 
 Every campaign seals model and execution settings, source hashes, split membership,

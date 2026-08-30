@@ -75,4 +75,5 @@ cad-evoloop-batch --campaign paper-01 --all-samples --protocol-mode frozen-evalu
   --split-manifest configs/campaigns/paper-final-split.json
 cad-evoloop-eqc --verdict path/to/verdict.json --output path/to/eqc.json
 cad-evoloop campaign-verify path/to/campaign-manifest.json
+cad-evoloop report path/to/campaign --output reports/generated/campaign-name
 ```
