@@ -167,19 +167,6 @@ def aggregate_visual_results(
     }
 
 
-def _single_evaluation_resolves(
-    visual: dict[str, Any], target_ids: list[str], confidence_threshold: float,
-) -> bool:
-    if visual.get("image_quality") != "sufficient":
-        return False
-    values = {item.get("id"): item for item in visual.get("rubrics", [])}
-    return all(
-        values.get(rubric_id, {}).get("verdict") in {"pass", "fail"}
-        and float(values[rubric_id].get("confidence", 0)) >= confidence_threshold
-        for rubric_id in target_ids
-    )
-
-
 def _aggregate_provider_metadata(providers: list[dict[str, Any]], model: str) -> dict[str, Any]:
     usage_keys = (
         "input_tokens", "cached_input_tokens", "cache_write_input_tokens",
@@ -251,8 +238,6 @@ def evaluate_visual_gaps(
         )
         raw_evaluations.append(raw)
         provider_evaluations.append(provider_metadata)
-        if index == 0 and _single_evaluation_resolves(raw, target_ids, confidence_threshold):
-            break
     raw = aggregate_visual_results(raw_evaluations, target_ids)
     provider_metadata = (
         provider_evaluations[0]

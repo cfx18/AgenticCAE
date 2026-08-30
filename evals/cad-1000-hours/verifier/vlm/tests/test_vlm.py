@@ -219,6 +219,47 @@ def test_low_confidence_evaluation_expands_to_consensus(tmp_path: Path, monkeypa
     assert result["provider"]["usage"]["input_tokens"] == 30
 
 
+def test_production_consensus_does_not_short_circuit_high_confidence(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    (sample / "task_desc.json").write_text('{"task":"draw"}', encoding="utf-8")
+    (sample / "rubrics.json").write_text(json.dumps({
+        "rubrics": [{"id": "R1", "requirement": "Visible profile"}],
+    }), encoding="utf-8")
+    deterministic_path = tmp_path / "deterministic.json"
+    deterministic_path.write_text(json.dumps(deterministic()), encoding="utf-8")
+    candidate = tmp_path / "candidate.png"
+    reference = tmp_path / "reference.png"
+    Image.new("RGB", (32, 32), "white").save(candidate)
+    Image.new("RGB", (32, 32), "white").save(reference)
+    calls = []
+
+    def fake_evaluate(self, prompt, images, schema_path, work_dir, expected_ids):
+        calls.append(work_dir)
+        return visual_result(confidence=0.99), {
+            "provider": "test", "model": self.model, "usage": {}, "elapsed_seconds": 0,
+        }
+
+    monkeypatch.setattr(
+        "cad_evoloop.verification.vlm.evaluate.CodexCliProvider.evaluate", fake_evaluate,
+    )
+
+    result = evaluate_visual_gaps(
+        sample_dir=sample,
+        deterministic_path=deterministic_path,
+        candidate_images=[candidate],
+        reference_images=[reference],
+        output=tmp_path / "visual.json",
+        work_dir=tmp_path / "work",
+        max_evaluations=3,
+    )
+
+    assert len(calls) == 3
+    assert result["consensus_policy"]["actual_evaluations"] == 3
+
+
 def test_provider_retains_evaluator_usage_and_output_paths(tmp_path: Path, monkeypatch) -> None:
     image = tmp_path / "image.png"
     schema = tmp_path / "schema.json"

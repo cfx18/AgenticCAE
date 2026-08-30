@@ -26,12 +26,12 @@ provider can implement the same return pair: `(visual_result, metadata)`.
 ## Decision policy
 
 Only deterministic rubric entries whose status is `unverified` are sent to the
-VLM. A high-confidence first evaluation resolves the rubric immediately. When
-any target remains below that threshold, production runners request two more
-isolated evaluations. A repeated result resolves a rubric only when at least
-two thirds of all evaluations agree, each counted vote has confidence at least
-0.65, and the agreeing votes average at least 0.70. Conflicts remain incomplete.
-The merge order is:
+VLM. Production runners request three isolated evaluations for every visual
+target; a single-evaluation mode remains available for fast development checks.
+A repeated result resolves a rubric only when at least two thirds of all
+evaluations agree, each counted vote has confidence at least 0.65, and the
+agreeing votes average at least 0.70. Conflicts remain incomplete. The merge
+order is:
 
 1. Any deterministic failure makes the combined decision `fail`.
 2. Any accepted visual failure makes it `fail`.
