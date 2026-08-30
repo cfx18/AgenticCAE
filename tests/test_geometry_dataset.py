@@ -40,3 +40,9 @@ def test_materializes_orthographic_and_omnimech_samples(tmp_path: Path, monkeypa
     assert (output / "ortho2cad/part/ground_truth.py").read_text() == "solid = 1"
     assert (output / "omnimech/1/ground_truth.stl").read_bytes() == b"stl"
 
+    first_manifest = (output / "manifest.json").read_bytes()
+    second = materialize_geometry_pilot(
+        data_root=data, output_root=output, ortho_count=1, omni_count=1,
+    )
+    assert "created_at" not in second
+    assert (output / "manifest.json").read_bytes() == first_manifest

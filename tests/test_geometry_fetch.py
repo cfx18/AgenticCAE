@@ -44,3 +44,23 @@ def test_hugging_face_artifact_paths_are_url_encoded() -> None:
 
     assert url.endswith("folder/a%20drawing.png")
 
+
+def test_download_manifest_is_deterministic(tmp_path: Path, monkeypatch) -> None:
+    fetch = load_fetch_module()
+    monkeypatch.setattr(fetch, "SOURCES", {
+        "sample": {
+            "source": "https://example.test/data",
+            "revision": "abc123",
+            "license": "test",
+            "artifacts": [{"path": "sample.bin", "expected_bytes": 3, "url": "https://example.test/a"}],
+        },
+    })
+    monkeypatch.setattr(fetch, "fetch_artifact", lambda item, root: {
+        "path": item["path"], "bytes": 3, "sha256": "a" * 64, "url": item["url"],
+    })
+
+    first = fetch.fetch(["sample"], tmp_path, workers=1)
+    second = fetch.fetch(["sample"], tmp_path, workers=1)
+
+    assert first == second
+    assert "created_at" not in first

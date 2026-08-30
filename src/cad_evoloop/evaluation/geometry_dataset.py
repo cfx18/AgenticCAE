@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -165,7 +164,6 @@ def materialize_geometry_pilot(
     manifest = {
         "schema_version": "1.0",
         "campaign_id": "geometry-pilot-v1",
-        "created_at": datetime.now(timezone.utc).isoformat(),
         "download_manifest_sha256": _sha256(download_manifest),
         "sample_count": len(samples),
         "samples": samples,

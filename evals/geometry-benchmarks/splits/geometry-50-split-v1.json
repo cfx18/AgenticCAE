@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "kind": "stratified-geometry-split",
+  "seed": "evocad-geometry-split-v1-20260830",
+  "source_manifest_sha256": "01672e0fc8abbfebecfe352a4e4a88ee93a383b849d5b8213a6b08acc6c8c280",
+  "source_sample_ids_sha256": "680c8b140a11f08d818b1bdc32ca8fca1977a8e0d2a27b629077f1b3bfdfc8ac",
+  "ratios": {
+    "dev": 0.4,
+    "validation": 0.2,
+    "hidden_test": 0.4
+  },
+  "sample_count": 50,
+  "strata": {
+    "omnimech": {
+      "dev": 4,
+      "validation": 2,
+      "hidden_test": 4
+    },
+    "ortho2cad": {
+      "dev": 16,
+      "validation": 8,
+      "hidden_test": 16
+    }
+  },
+  "splits": {
+    "dev": [
+      "omnimech:4",
+      "omnimech:9",
+      "omnimech:2",
+      "omnimech:3",
+      "ortho2cad:00315650",
+      "ortho2cad:00248776",
+      "ortho2cad:00531511",
+      "ortho2cad:00707758",
+      "ortho2cad:00070015",
+      "ortho2cad:00369046",
+      "ortho2cad:00241318",
+      "ortho2cad:00789379",
+      "ortho2cad:00694405",
+      "ortho2cad:00387732",
+      "ortho2cad:00765253",
+      "ortho2cad:00361382",
+      "ortho2cad:00141107",
+      "ortho2cad:00189332",
+      "ortho2cad:00186338",
+      "ortho2cad:00824990"
+    ],
+    "validation": [
+      "omnimech:10",
+      "omnimech:6",
+      "ortho2cad:00333069",
+      "ortho2cad:00306373",
+      "ortho2cad:00955962",
+      "ortho2cad:00574088",
+      "ortho2cad:00948991",
+      "ortho2cad:00675497",
+      "ortho2cad:00144800",
+      "ortho2cad:00992484"
+    ],
+    "hidden_test": [
+      "omnimech:8",
+      "omnimech:7",
+      "omnimech:1",
+      "omnimech:5",
+      "ortho2cad:00217029",
+      "ortho2cad:00442545",
+      "ortho2cad:00904404",
+      "ortho2cad:00961053",
+      "ortho2cad:00827834",
+      "ortho2cad:00129614",
+      "ortho2cad:00629922",
+      "ortho2cad:00878404",
+      "ortho2cad:00507123",
+      "ortho2cad:00347202",
+      "ortho2cad:00519312",
+      "ortho2cad:00106662",
+      "ortho2cad:00946705",
+      "ortho2cad:00966577",
+      "ortho2cad:00787182",
+      "ortho2cad:00534824"
+    ]
+  },
+  "cost_pilot": {
+    "source_split": "dev",
+    "sample_count": 10,
+    "strata": {
+      "ortho2cad": 8,
+      "omnimech": 2
+    },
+    "sample_ids": [
+      "omnimech:9",
+      "omnimech:3",
+      "ortho2cad:00824990",
+      "ortho2cad:00789379",
+      "ortho2cad:00186338",
+      "ortho2cad:00070015",
+      "ortho2cad:00141107",
+      "ortho2cad:00315650",
+      "ortho2cad:00361382",
+      "ortho2cad:00241318"
+    ]
+  },
+  "split_sha256": "4a51719d613629c5b26468ffe79dff0dab297a1c8c253cc25a8872ca5c2d70ad"
+}

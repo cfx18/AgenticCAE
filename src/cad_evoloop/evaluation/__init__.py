@@ -10,6 +10,7 @@ from .geometry_dataset import materialize_geometry_pilot
 from .geometry_score import calibrate_geometry_manifest, score_geometry_files
 from .geometry_campaign import run_geometry_campaign
 from .geometry_report import generate_geometry_campaign_report
+from .geometry_split import build_geometry_split, validate_geometry_split, write_geometry_split
 
 __all__ = [
     "build_campaign_manifest",
@@ -22,6 +23,9 @@ __all__ = [
     "replay_summary",
     "replay_verifier",
     "run_geometry_campaign",
+    "build_geometry_split",
+    "validate_geometry_split",
+    "write_geometry_split",
     "score_geometry_files",
     "export_agent_inputs",
     "input_inventory",

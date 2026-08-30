@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from cad_evoloop.evaluation import geometry_campaign
+from cad_evoloop.evaluation.geometry_split import build_geometry_split
 
 
 def _sample() -> dict:
@@ -109,6 +110,33 @@ def test_geometry_campaign_dry_run_binds_truth_hash(tmp_path, monkeypatch) -> No
     assert campaign["jobs"][0]["ground_truth_sha256"]
     assert campaign["source_manifest_sha256"]
     assert campaign["protocol"] == "evocad-geometry-v2"
+
+
+def test_geometry_campaign_binds_benchmark_split(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = _manifest(workspace / ".local/data")
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    split = build_geometry_split(manifest, pilot_count=1)
+    split_path = workspace / "split.json"
+    split_path.write_text(json.dumps(split), encoding="utf-8")
+
+    geometry_campaign.run_geometry_campaign(
+        manifest,
+        campaign="split-run",
+        models=["test-model"],
+        split_file=split_path,
+        split_name="cost_pilot",
+        dry_run=True,
+    )
+
+    campaign_path = workspace / "evals/geometry-benchmarks/batch/split-run/campaign-manifest.json"
+    campaign = json.loads(campaign_path.read_text(encoding="utf-8"))
+    assert campaign["benchmark_split"] == {
+        "name": "cost_pilot",
+        "split_sha256": split["split_sha256"],
+        "source_sample_ids_sha256": split["source_sample_ids_sha256"],
+    }
 
 
 def test_codex_command_mounts_only_audited_autocad_server(tmp_path, monkeypatch) -> None:

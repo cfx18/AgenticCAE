@@ -45,6 +45,10 @@ The 50-sample strict split uses only sources with STEP ground truth:
 cad-evoloop geometry-materialize `
   --output .local/datasets/evocad/materialized/geometry-50-v1 `
   --bench-count 0 --ortho-count 40 --omni-count 10
+
+cad-evoloop geometry-split `
+  .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  --output evals/geometry-benchmarks/splits/geometry-50-split-v1.json
 ```
 
 Protocol `evocad-geometry-v2` permits translation and the 24 right-handed axis
@@ -71,14 +75,18 @@ or the time budget, with five attempts only as a safety ceiling.
 
 ```powershell
 cad-evoloop geometry-batch `
-  .local/datasets/evocad/materialized/geometry-pilot-v1/manifest.json `
-  --campaign geometry-pilot-v2 --model gpt-5.6-sol --max-jobs 10
+  .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  --split-file evals/geometry-benchmarks/splits/geometry-50-split-v1.json `
+  --split-name cost_pilot `
+  --campaign geometry-cost-pilot-v2 `
+  --model gpt-5.6-sol --model gpt-5.6-terra --model gpt-5.6-luna
 
-cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-pilot-v2 `
-  --output reports/generated/geometry-pilot-v2
+cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-cost-pilot-v2 `
+  --output reports/generated/geometry-cost-pilot-v2
 ```
 
 The committed protocol and calibration JSON files preserve both v1 and v2.
 Raw data remains local because not every upstream source has redistribution
 terms. Campaign trajectories and binary candidates are also local and ignored;
 their manifests bind sources, inputs, and ground truth by SHA-256.
+Download, materialization, split, and campaign manifests are deterministic.

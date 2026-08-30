@@ -18,6 +18,7 @@ from .evaluation.geometry_dataset import materialize_geometry_pilot
 from .evaluation.geometry_score import calibrate_geometry_manifest, score_geometry_files
 from .evaluation.geometry_campaign import run_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
+from .evaluation.geometry_split import write_geometry_split
 from .paths import project_root
 from .verification.export_core_console import export_dwg_core
 
@@ -181,6 +182,11 @@ def _batch_geometry() -> None:
     parser.add_argument("--campaign", required=True)
     parser.add_argument("--model", action="append", dest="models")
     parser.add_argument("--sample", action="append", dest="samples")
+    parser.add_argument("--split-file", type=Path)
+    parser.add_argument(
+        "--split-name",
+        choices=("dev", "validation", "hidden_test", "cost_pilot"),
+    )
     parser.add_argument(
         "--reasoning-effort", default="medium",
         choices=("low", "medium", "high", "xhigh", "max"),
@@ -194,6 +200,10 @@ def _batch_geometry() -> None:
     parser.add_argument("--voxel-resolution", type=int, default=64)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.samples and args.split_file:
+        parser.error("--sample cannot be combined with --split-file")
+    if bool(args.split_file) != bool(args.split_name):
+        parser.error("--split-file and --split-name must be provided together")
     result = run_geometry_campaign(
         args.manifest,
         campaign=args.campaign,
@@ -208,6 +218,8 @@ def _batch_geometry() -> None:
         score_samples=args.score_samples,
         voxel_resolution=args.voxel_resolution,
         dry_run=args.dry_run,
+        split_file=args.split_file,
+        split_name=args.split_name,
     )
     print(json.dumps(result, ensure_ascii=False))
 
@@ -219,6 +231,26 @@ def _report_geometry() -> None:
     args = parser.parse_args()
     result = generate_geometry_campaign_report(args.campaign_dir, args.output)
     print(json.dumps(result, ensure_ascii=False))
+
+
+def _split_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Create a deterministic geometry benchmark split")
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--seed", default="evocad-geometry-split-v1-20260830")
+    parser.add_argument("--pilot-count", type=int, default=10)
+    args = parser.parse_args()
+    result = write_geometry_split(
+        args.manifest,
+        args.output,
+        seed=args.seed,
+        pilot_count=args.pilot_count,
+    )
+    print(json.dumps({
+        "samples": result["sample_count"],
+        "split_sha256": result["split_sha256"],
+        "output": str(args.output.resolve()),
+    }, ensure_ascii=False))
 
 
 def main() -> None:
@@ -237,6 +269,7 @@ def main() -> None:
         "geometry-export": (_export_geometry, "export DWG solids for geometry scoring"),
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
+        "geometry-split": (_split_geometry, "create a deterministic benchmark split"),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:
         command = sys.argv[1]

@@ -17,6 +17,7 @@ def test_main_forwards_help_to_geometry_batch(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert "--max-attempts" in output
     assert "--job-time-budget" in output
+    assert "--split-file" in output
 
 
 def test_main_retains_top_level_help(monkeypatch, capsys) -> None:
@@ -27,3 +28,13 @@ def test_main_retains_top_level_help(monkeypatch, capsys) -> None:
 
     assert exit_info.value.code == 0
     assert "geometry-report" in capsys.readouterr().out
+
+
+def test_main_forwards_help_to_geometry_split(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["cad-evoloop", "geometry-split", "--help"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0
+    assert "--pilot-count" in capsys.readouterr().out

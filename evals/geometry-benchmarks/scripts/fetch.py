@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -166,7 +165,6 @@ def fetch(names: list[str], data_root: Path, workers: int = 4) -> dict[str, Any]
         })
     manifest = {
         "schema_version": "1.0",
-        "created_at": datetime.now(timezone.utc).isoformat(),
         "profile": "geometry-pilot",
         "sources": records,
     }

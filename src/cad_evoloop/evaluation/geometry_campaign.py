@@ -170,9 +170,11 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "src/cad_evoloop/backends/autocad/core_console.py",
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/geometry_score.py",
+        workspace / "src/cad_evoloop/evaluation/geometry_split.py",
         workspace / "src/cad_evoloop/verification/export_core_console.py",
         workspace / "evals/geometry-benchmarks/prompts/modeling.md",
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
+        workspace / "evals/geometry-benchmarks/protocol-v2.json",
     ]
 
 
@@ -304,6 +306,7 @@ def run_geometry_job(
     job_time_budget: int,
     score_samples: int,
     voxel_resolution: int,
+    split_path: Path | None = None,
 ) -> dict[str, Any]:
     workspace = project_root()
     eval_root = workspace / "evals/geometry-benchmarks"
@@ -338,7 +341,7 @@ def run_geometry_job(
             "external_sample_id": sample["sample_id"],
         },
         source_paths=_source_paths(workspace),
-        input_paths=[job_dir / "task.json", *images],
+        input_paths=[job_dir / "task.json", *images, *([split_path] if split_path else [])],
     )
     prompt_root = eval_root / "prompts"
     attempts = []
@@ -533,6 +536,7 @@ def build_geometry_campaign_manifest(
     job_time_budget: int,
     score_samples: int,
     voxel_resolution: int,
+    split_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     jobs = []
     for sample in samples:
@@ -558,6 +562,8 @@ def build_geometry_campaign_manifest(
         },
         "jobs": jobs,
     }
+    if split_binding is not None:
+        payload["benchmark_split"] = split_binding
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     payload["manifest_sha256"] = hashlib.sha256(canonical).hexdigest()
     return payload
@@ -579,6 +585,8 @@ def run_geometry_campaign(
     voxel_resolution: int = 64,
     dry_run: bool = False,
     executable: str | None = None,
+    split_file: str | Path | None = None,
+    split_name: str | None = None,
 ) -> dict[str, Any]:
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")
@@ -590,6 +598,35 @@ def run_geometry_campaign(
         raise ValueError("max_jobs must be at least 1")
     manifest_path, value = load_geometry_manifest(manifest)
     models = models or [DEFAULT_MODEL]
+    split_binding = None
+    split_path = None
+    if bool(split_file) != bool(split_name):
+        raise ValueError("split_file and split_name must be provided together")
+    if split_file:
+        if sample_ids is not None:
+            raise ValueError("sample_ids cannot be combined with a benchmark split")
+        from .geometry_split import validate_geometry_split
+
+        split_path = Path(split_file).resolve()
+        split_payload = json.loads(split_path.read_text(encoding="utf-8"))
+        scorable_ids = [
+            sample["sample_id"] for sample in value["samples"] if sample.get("ground_truth_step")
+        ]
+        validate_geometry_split(split_payload, sample_ids=scorable_ids)
+        if split_payload["source_manifest_sha256"] != sha256_file(manifest_path):
+            raise ValueError("Benchmark split was created for a different source manifest")
+        if split_name == "cost_pilot":
+            selected_ids = split_payload["cost_pilot"]["sample_ids"]
+        elif split_name in split_payload["splits"]:
+            selected_ids = split_payload["splits"][split_name]
+        else:
+            raise ValueError(f"Unknown benchmark split name: {split_name}")
+        sample_ids = set(selected_ids)
+        split_binding = {
+            "name": split_name,
+            "split_sha256": split_payload["split_sha256"],
+            "source_sample_ids_sha256": split_payload["source_sample_ids_sha256"],
+        }
     samples = [
         sample for sample in value["samples"]
         if sample.get("ground_truth_step")
@@ -616,6 +653,7 @@ def run_geometry_campaign(
         job_time_budget,
         score_samples,
         voxel_resolution,
+        split_binding,
     )
     campaign_manifest_path = campaign_dir / "campaign-manifest.json"
     if campaign_manifest_path.is_file():
@@ -659,6 +697,7 @@ def run_geometry_campaign(
             job_time_budget=job_time_budget,
             score_samples=score_samples,
             voxel_resolution=voxel_resolution,
+            split_path=split_path,
         )
         results.append(result)
         results_path.write_text(
