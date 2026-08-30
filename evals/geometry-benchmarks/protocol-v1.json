@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v1",
+  "candidate_formats": ["step", "stp", "stl", "obj", "ply"],
+  "alignment": {
+    "translation": true,
+    "right_handed_axis_orientations": 24,
+    "scale": false
+  },
+  "sampling": {
+    "method": "deterministic-area-weighted-surface",
+    "seed": 20260830,
+    "points": 20000
+  },
+  "voxel_resolution": 64,
+  "thresholds": {
+    "candidate_watertight": true,
+    "voxel_iou_min": 0.95,
+    "normalized_chamfer_max": 0.01,
+    "bbox_relative_error_max": 0.01,
+    "volume_relative_error_max": 0.02
+  },
+  "strict_pass": "all thresholds must pass"
+}

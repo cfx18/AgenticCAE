@@ -14,7 +14,10 @@ from .evaluation.metrics import main as metrics_main
 from .evaluation.report import generate_campaign_report
 from .evaluation.explorer import generate_explorer_bundle
 from .evaluation.replay import replay_verifier
+from .evaluation.geometry_dataset import materialize_geometry_pilot
+from .evaluation.geometry_score import calibrate_geometry_manifest, score_geometry_files
 from .paths import project_root
+from .verification.export_core_console import export_dwg_core
 
 
 def _run_script(relative: str) -> None:
@@ -97,6 +100,79 @@ def _replay_verifier() -> None:
     print(json.dumps(summary, ensure_ascii=False))
 
 
+def _materialize_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Materialize a geometry-grounded pilot split")
+    parser.add_argument("--data-root", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--bench-count", type=int, default=10)
+    parser.add_argument("--ortho-count", type=int, default=10)
+    parser.add_argument("--omni-count", type=int, default=10)
+    args = parser.parse_args()
+    payload = materialize_geometry_pilot(
+        data_root=args.data_root,
+        output_root=args.output,
+        bench_count=args.bench_count,
+        ortho_count=args.ortho_count,
+        omni_count=args.omni_count,
+    )
+    print(json.dumps({
+        "samples": len(payload["samples"]),
+        "manifest": payload["manifest_path"],
+    }, ensure_ascii=False))
+
+
+def _score_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Score candidate geometry against CAD ground truth")
+    parser.add_argument("candidate", type=Path)
+    parser.add_argument("ground_truth", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--samples", type=int, default=20000)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    args = parser.parse_args()
+    result = score_geometry_files(
+        args.candidate,
+        args.ground_truth,
+        sample_count=args.samples,
+        voxel_resolution=args.voxel_resolution,
+    )
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False))
+
+
+def _calibrate_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Calibrate STEP/STL ground-truth consistency")
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--samples", type=int, default=20000)
+    parser.add_argument("--voxel-resolution", type=int, default=48)
+    args = parser.parse_args()
+    result = calibrate_geometry_manifest(
+        args.manifest,
+        args.output,
+        sample_count=args.samples,
+        voxel_resolution=args.voxel_resolution,
+    )
+    print(json.dumps(result["summary"], ensure_ascii=False))
+
+
+def _export_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Export DWG solids to a verifier-ready STL")
+    parser.add_argument("candidate", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--facet-resolution", type=float, default=10.0)
+    args = parser.parse_args()
+    output = export_dwg_core(
+        args.candidate,
+        args.output,
+        args.timeout,
+        facet_resolution=args.facet_resolution,
+    )
+    print(json.dumps({"output": str(output)}, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -107,6 +183,10 @@ def main() -> None:
         "report": (_report_campaign, "generate campaign tables and paper-ready figures"),
         "explorer-export": (_export_explorer, "export cached trajectories for the Run Explorer"),
         "verifier-replay": (_replay_verifier, "replay cached DWGs without redrawing"),
+        "geometry-materialize": (_materialize_geometry, "materialize geometry-grounded samples"),
+        "geometry-score": (_score_geometry, "compare candidate and ground-truth geometry"),
+        "geometry-calibrate": (_calibrate_geometry, "calibrate STEP/STL ground-truth pairs"),
+        "geometry-export": (_export_geometry, "export DWG solids for geometry scoring"),
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs="?", choices=commands)
