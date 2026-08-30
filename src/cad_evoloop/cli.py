@@ -228,8 +228,11 @@ def _report_geometry() -> None:
     parser = argparse.ArgumentParser(description="Generate a geometry campaign report")
     parser.add_argument("campaign_dir", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--annotations", type=Path)
     args = parser.parse_args()
-    result = generate_geometry_campaign_report(args.campaign_dir, args.output)
+    result = generate_geometry_campaign_report(
+        args.campaign_dir, args.output, annotations_path=args.annotations,
+    )
     print(json.dumps(result, ensure_ascii=False))
 
 

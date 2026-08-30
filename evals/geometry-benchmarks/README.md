@@ -82,8 +82,22 @@ cad-evoloop geometry-batch `
   --model gpt-5.6-sol --model gpt-5.6-terra --model gpt-5.6-luna
 
 cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-cost-pilot-v2 `
-  --output reports/generated/geometry-cost-pilot-v2
+  --output reports/generated/geometry-cost-pilot-v2 `
+  --annotations evals/geometry-benchmarks/annotations/cost-pilot-v2-data-quality.json
 ```
+
+The report writes per-attempt data to `attempts.csv`, per-model aggregates to
+`models.csv` and `summary.json`, optional filtered aggregates to
+`models-primary.csv`, and 1600x900 repair-trajectory and model
+comparison figures. `Pass@1` measures strict success without repair; `Strict
+final` measures strict success after selecting the best repair checkpoint.
+Elapsed time and token counts include every attempt. MCP and Core Console
+failure counts are diagnostic events and do not imply that the enclosing run
+failed, because the agent may recover with another tool call or repair attempt.
+Human-audited benchmark defects are versioned separately under `annotations/`.
+Samples marked `exclude_primary` remain in raw diagnostic reports but must not
+be included in headline model-comparison metrics; `review` samples remain
+eligible with their stated limitations disclosed.
 
 The committed protocol and calibration JSON files preserve both v1 and v2.
 Raw data remains local because not every upstream source has redistribution

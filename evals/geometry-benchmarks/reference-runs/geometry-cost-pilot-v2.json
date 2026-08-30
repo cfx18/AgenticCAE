@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "campaign": "geometry-cost-pilot-v2",
+  "date": "2026-08-31",
+  "source_commit": "727b683",
+  "campaign_manifest_sha256": "33717730e5cba428ac4bafd5edacddc7b210fdf2cdb877f06c4d519235a1f71b",
+  "source_manifest_sha256": "01672e0fc8abbfebecfe352a4e4a88ee93a383b849d5b8213a6b08acc6c8c280",
+  "split_sha256": "4a51719d613629c5b26468ffe79dff0dab297a1c8c253cc25a8872ca5c2d70ad",
+  "data_quality_annotations_sha256": "d8197f496b6e559326849fd4e5317a2968b55f7da16cd0a760778873fe141064",
+  "split_name": "cost_pilot",
+  "execution": {
+    "max_attempts": 3,
+    "stagnation_limit": 2,
+    "job_time_budget_seconds": 1200,
+    "surface_samples": 20000,
+    "voxel_resolution": 64,
+    "reasoning_effort": "medium"
+  },
+  "all_runs": {
+    "runs": 30,
+    "pass_at_1": 10,
+    "pass_at_1_rate": 33.33,
+    "strict_passes": 18,
+    "strict_pass_rate": 60.0,
+    "attempts": 64,
+    "first_attempt_mean": 64.32,
+    "selected_mean": 84.63,
+    "mean_recovery_gain": 20.31,
+    "runs_improved": 16,
+    "total_elapsed_seconds": 14558.4,
+    "input_tokens": 22343784,
+    "output_tokens": 375659,
+    "ledger_integrity_passes": 30
+  },
+  "primary_runs": {
+    "policy": "Exclude samples marked exclude_primary in annotations/cost-pilot-v2-data-quality.json.",
+    "excluded_sample_ids": [
+      "omnimech:9"
+    ],
+    "runs": 27,
+    "pass_at_1": 10,
+    "pass_at_1_rate": 37.04,
+    "strict_passes": 18,
+    "strict_pass_rate": 66.67,
+    "attempts": 55,
+    "first_attempt_mean": 70.36,
+    "selected_mean": 89.35,
+    "mean_recovery_gain": 18.98,
+    "total_elapsed_seconds": 11855.49
+  },
+  "models": [
+    {
+      "model": "gpt-5.6-sol",
+      "runs": 10,
+      "pass_at_1_rate": 50.0,
+      "strict_pass_rate": 60.0,
+      "first_attempt_mean": 78.23,
+      "selected_mean": 89.27,
+      "mean_recovery_gain": 11.04,
+      "mean_attempts": 1.9,
+      "mean_elapsed_seconds": 469.24,
+      "input_tokens": 7069154,
+      "output_tokens": 144511,
+      "timed_out_attempts": 0,
+      "codex_error_events": 9,
+      "verifier_errors": 2,
+      "mcp_tool_calls": 127,
+      "mcp_failed_calls": 0,
+      "core_job_failures": 10,
+      "core_job_timeouts": 3
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "runs": 10,
+      "pass_at_1_rate": 40.0,
+      "strict_pass_rate": 60.0,
+      "first_attempt_mean": 68.28,
+      "selected_mean": 84.0,
+      "mean_recovery_gain": 15.72,
+      "mean_attempts": 2.1,
+      "mean_elapsed_seconds": 395.8,
+      "input_tokens": 6918154,
+      "output_tokens": 104548,
+      "timed_out_attempts": 0,
+      "codex_error_events": 3,
+      "verifier_errors": 0,
+      "mcp_tool_calls": 159,
+      "mcp_failed_calls": 0,
+      "core_job_failures": 18,
+      "core_job_timeouts": 3
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "runs": 10,
+      "pass_at_1_rate": 10.0,
+      "strict_pass_rate": 60.0,
+      "first_attempt_mean": 46.45,
+      "selected_mean": 80.62,
+      "mean_recovery_gain": 34.16,
+      "mean_attempts": 2.4,
+      "mean_elapsed_seconds": 590.8,
+      "input_tokens": 8356476,
+      "output_tokens": 126600,
+      "timed_out_attempts": 2,
+      "codex_error_events": 0,
+      "verifier_errors": 4,
+      "mcp_tool_calls": 259,
+      "mcp_failed_calls": 13,
+      "core_job_failures": 31,
+      "core_job_timeouts": 6
+    }
+  ],
+  "datasets": [
+    {
+      "dataset": "ortho2cad",
+      "runs": 24,
+      "pass_at_1": 10,
+      "strict_passes": 18,
+      "first_attempt_mean": 71.9,
+      "selected_mean": 93.22
+    },
+    {
+      "dataset": "omnimech",
+      "runs": 6,
+      "pass_at_1": 0,
+      "strict_passes": 0,
+      "first_attempt_mean": 33.99,
+      "selected_mean": 50.28
+    }
+  ],
+  "ground_truth_path_exposed_to_agent": false,
+  "notes": [
+    "All 30 runs completed without human intervention and passed ledger integrity verification.",
+    "The three models tie on final strict pass rate, but differ substantially in pass@1, runtime, tool failures, and repair gain.",
+    "All strict passes came from Ortho2CAD; neither OmniMech sample reached strict passage.",
+    "omnimech:9 has a configuration-selection conflict and is excluded only from primary metrics, not deleted from diagnostic results.",
+    "Failure counters are internal diagnostic events and may be recovered within a successful run."
+  ]
+}
