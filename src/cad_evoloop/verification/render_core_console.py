@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
-from .extract_core_console import CORE_CONSOLE, decode_console_output, lisp_path
+from .extract_core_console import core_console_command, decode_console_output, lisp_path
 
 
 def scene_has_3d(scene: dict) -> bool:
@@ -50,11 +51,16 @@ def render_dwg_core(
     if not candidate.is_file():
         raise FileNotFoundError(candidate)
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="cad-core-render-", dir=output.parent) as temp:
+    with tempfile.TemporaryDirectory(
+        prefix="cad-core-render-", dir=output.parent, ignore_cleanup_errors=True,
+    ) as temp:
         job_dir = Path(temp)
+        user_data_dir = job_dir / "autocad-user-data"
         sentinel = job_dir / "render.done"
         payload = job_dir / "render.lsp"
         script = job_dir / "render.scr"
+        working_candidate = job_dir / "input.dwg"
+        shutil.copy2(candidate, working_candidate)
         payload.write_text(render_lisp(output, sentinel, view), encoding="utf-8", newline="\n")
         script.write_text(
             f'(setvar "SECURELOAD" 0)\n(load "{lisp_path(payload)}")\n_.QUIT\n_N\n',
@@ -62,7 +68,7 @@ def render_dwg_core(
             newline="\n",
         )
         completed = subprocess.run(
-            [str(CORE_CONSOLE), "/i", str(candidate), "/s", str(script)],
+            core_console_command(working_candidate, script, user_data_dir),
             cwd=candidate.parent,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

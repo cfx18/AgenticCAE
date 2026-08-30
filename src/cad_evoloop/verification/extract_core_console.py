@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from typing import Any
@@ -43,6 +44,17 @@ def decode_console_output(value: bytes) -> str:
 
 def lisp_path(path: Path) -> str:
     return str(path).replace("\\", "/").replace('"', '\\"')
+
+
+def core_console_command(candidate: Path, script: Path, user_data_dir: Path) -> list[str]:
+    """Build an isolated invocation that cannot contend for the desktop profile."""
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+    return [
+        str(CORE_CONSOLE),
+        "/i", str(candidate),
+        "/s", str(script),
+        "/isolate", f"evocad-{user_data_dir.parent.name}", str(user_data_dir),
+    ]
 
 
 def extractor_lisp(output: Path) -> str:
@@ -199,11 +211,16 @@ def extract_dwg_core(path: str | Path, timeout: int = 120) -> dict[str, Any]:
     candidate = Path(path).resolve()
     if not candidate.is_file():
         raise FileNotFoundError(candidate)
-    with tempfile.TemporaryDirectory(prefix="cad-core-extract-", dir=candidate.parent) as temp:
+    with tempfile.TemporaryDirectory(
+        prefix="cad-core-extract-", dir=candidate.parent, ignore_cleanup_errors=True,
+    ) as temp:
         job_dir = Path(temp)
+        user_data_dir = job_dir / "autocad-user-data"
         output = job_dir / "scene.tsv"
         payload = job_dir / "extract.lsp"
         script = job_dir / "extract.scr"
+        working_candidate = job_dir / "input.dwg"
+        shutil.copy2(candidate, working_candidate)
         payload.write_text(extractor_lisp(output), encoding="utf-8", newline="\n")
         script.write_text(
             f'(setvar "SECURELOAD" 0)\n(load "{lisp_path(payload)}")\n_.QUIT\n_N\n',
@@ -211,7 +228,7 @@ def extract_dwg_core(path: str | Path, timeout: int = 120) -> dict[str, Any]:
             newline="\n",
         )
         completed = subprocess.run(
-            [str(CORE_CONSOLE), "/i", str(candidate), "/s", str(script)],
+            core_console_command(working_candidate, script, user_data_dir),
             # AutoCAD may briefly leave a helper process inheriting its cwd on Windows.
             # Keep that cwd outside the disposable directory so cleanup cannot recurse
             # on a directory that is still held open.

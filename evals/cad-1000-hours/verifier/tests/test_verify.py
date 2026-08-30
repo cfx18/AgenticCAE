@@ -42,6 +42,9 @@ def test_core_extractor_keeps_process_cwd_outside_disposable_directory(tmp_path,
 
     def fake_run(command, **kwargs):
         observed["cwd"] = kwargs["cwd"]
+        observed["command"] = command
+        observed["input"] = Path(command[command.index("/i") + 1])
+        observed["input_bytes"] = observed["input"].read_bytes()
         script = Path(command[command.index("/s") + 1])
         (script.parent / "scene.tsv").write_text("INSUNITS\t4\nDONE\n", encoding="utf-8")
         return SimpleNamespace(returncode=0)
@@ -51,6 +54,12 @@ def test_core_extractor_keeps_process_cwd_outside_disposable_directory(tmp_path,
     scene = CORE_EXTRACTOR.extract_dwg_core(candidate)
 
     assert observed["cwd"] == candidate.parent
+    assert observed["input"] != candidate
+    assert observed["input_bytes"] == candidate.read_bytes()
+    assert "/isolate" in observed["command"]
+    isolated = Path(observed["command"][observed["command"].index("/isolate") + 2])
+    assert isolated.name == "autocad-user-data"
+    assert isolated.is_relative_to(candidate.parent)
     assert scene["insunits"] == 4
 
 
@@ -108,6 +117,8 @@ def test_core_renderer_requires_output_sentinel(tmp_path, monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="render failed"):
         CORE_RENDERER.render_dwg_core(candidate, tmp_path / "candidate.png")
+
+    assert candidate.read_bytes() == b"dwg"
 
 
 def test_core_extractor_collects_layouts_dimstyles_and_entity_extents(tmp_path) -> None:

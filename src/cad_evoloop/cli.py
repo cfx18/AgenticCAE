@@ -78,6 +78,7 @@ def _replay_verifier() -> None:
     parser.add_argument("--campaign", required=True)
     parser.add_argument("--vlm-model", default="gpt-5.5")
     parser.add_argument("--vlm-confidence", type=float, default=0.85)
+    parser.add_argument("--vlm-max-evaluations", type=int, default=3)
     parser.add_argument("--max-jobs", type=int)
     args = parser.parse_args()
     summary = replay_verifier(
@@ -86,6 +87,7 @@ def _replay_verifier() -> None:
         campaign_id=args.campaign,
         vlm_model=args.vlm_model,
         confidence_threshold=args.vlm_confidence,
+        max_evaluations=args.vlm_max_evaluations,
         max_jobs=args.max_jobs,
     )
     print(json.dumps(summary, ensure_ascii=False))

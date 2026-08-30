@@ -26,18 +26,22 @@ provider can implement the same return pair: `(visual_result, metadata)`.
 ## Decision policy
 
 Only deterministic rubric entries whose status is `unverified` are sent to the
-VLM. A visual answer resolves a rubric only when image quality is sufficient,
-the verdict is `pass` or `fail`, and confidence meets the threshold. The merge
-order is:
+VLM. A high-confidence first evaluation resolves the rubric immediately. When
+any target remains below that threshold, production runners request two more
+isolated evaluations. A repeated result resolves a rubric only when at least
+two thirds of all evaluations agree, each counted vote has confidence at least
+0.65, and the agreeing votes average at least 0.70. Conflicts remain incomplete.
+The merge order is:
 
 1. Any deterministic failure makes the combined decision `fail`.
 2. Any accepted visual failure makes it `fail`.
 3. Any unresolved target makes it `incomplete`.
 4. Otherwise it is `pass`.
 
-The output preserves raw visual answers, accepted/unresolved lists, normalized
-evidence boxes, prompt/model metadata, image SHA-256 hashes, deterministic score,
-and coverage before and after visual evaluation.
+The output preserves every raw evaluation, the consensus calculation,
+accepted/unresolved lists, normalized evidence boxes, prompt/model metadata,
+image SHA-256 hashes, deterministic score, and coverage before and after visual
+evaluation.
 
 ## Rendering and ledger
 

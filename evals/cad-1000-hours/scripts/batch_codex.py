@@ -21,6 +21,7 @@ WORKSPACE = EVAL_ROOT.parents[1]
 sys.path.insert(0, str(WORKSPACE / "src"))
 
 from cad_evoloop.ledger import RunLedger
+from cad_evoloop.ledger.ledger import sha256_file
 from cad_evoloop.evaluation import (
     build_campaign_manifest,
     evidence_qualified_completion,
@@ -416,6 +417,7 @@ def run_job(
     stagnation_limit: int = 2,
     min_coverage: float = 80.0,
     vlm_model: str = "gpt-5.5",
+    vlm_max_evaluations: int = 3,
     vlm_confidence: float = 0.85,
     enable_vlm: bool = True,
 ) -> dict[str, Any]:
@@ -633,16 +635,21 @@ def run_job(
                     work_dir=attempt_dir / "vlm-work",
                     model=vlm_model,
                     confidence_threshold=vlm_confidence,
+                    max_evaluations=vlm_max_evaluations,
                 )
                 ledger.add_artifact(run_dir, attempt_id, candidate_render, role="candidate-render")
                 if candidate_isometric.is_file():
                     ledger.add_artifact(run_dir, attempt_id, candidate_isometric, role="candidate-render")
                 ledger.add_artifact(run_dir, attempt_id, visual_path, role="vlm-verdict")
                 attempt_metrics["vlm_usage"] = visual_value["provider"].get("usage", {})
-                for key in ("events_path", "stderr_path", "result_path"):
-                    provider_path = Path(visual_value["provider"][key])
-                    if provider_path.is_file():
-                        ledger.add_artifact(run_dir, attempt_id, provider_path, role="vlm-log")
+                providers = visual_value["provider"].get(
+                    "evaluations", [visual_value["provider"]],
+                )
+                for provider in providers:
+                    for key in ("events_path", "stderr_path", "result_path"):
+                        provider_path = Path(provider[key])
+                        if provider_path.is_file():
+                            ledger.add_artifact(run_dir, attempt_id, provider_path, role="vlm-log")
                 ledger.event(
                     run_dir,
                     "vlm.completed",
@@ -894,6 +901,7 @@ def run_job(
         "attempts": attempts,
         "eqc": final_eqc,
         "selected_attempt_id": best_attempt_id,
+        "candidate_sha256": sha256_file(canonical_candidate) if canonical_candidate.is_file() else None,
     }
     metrics["total_usage"] = {
         key: metrics["usage"][key] + metrics["vlm_usage"][key]
@@ -955,6 +963,7 @@ def main() -> None:
     )
     parser.add_argument("--vlm-model", default="gpt-5.5")
     parser.add_argument("--vlm-confidence", type=float, default=0.85)
+    parser.add_argument("--vlm-max-evaluations", type=int, default=3)
     parser.add_argument("--disable-vlm", action="store_true")
     parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--max-jobs", type=int)
@@ -993,6 +1002,8 @@ def main() -> None:
         parser.error("--min-coverage must be between 0 and 100")
     if not 0.0 <= args.vlm_confidence <= 1.0:
         parser.error("--vlm-confidence must be between 0 and 1")
+    if args.vlm_max_evaluations < 1 or args.vlm_max_evaluations == 2:
+        parser.error("--vlm-max-evaluations must be 1 or at least 3")
     models = args.models or list(DEFAULT_MODELS)
     samples = (
         sorted(path.name for path in (EVAL_ROOT / "samples").iterdir() if path.is_dir())
@@ -1059,6 +1070,7 @@ def main() -> None:
                 "enabled": not args.disable_vlm,
                 "model": args.vlm_model,
                 "confidence_threshold": args.vlm_confidence,
+                "max_evaluations": args.vlm_max_evaluations,
             },
             "system_profile": profile,
             "jobs": [
@@ -1108,6 +1120,7 @@ def main() -> None:
                 stagnation_limit=args.stagnation_limit,
                 min_coverage=args.min_coverage,
                 vlm_model=args.vlm_model,
+                vlm_max_evaluations=args.vlm_max_evaluations,
                 vlm_confidence=args.vlm_confidence,
                 enable_vlm=not args.disable_vlm,
             )

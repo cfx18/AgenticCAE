@@ -40,6 +40,51 @@ def replay_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def retain_completed_results(results_path: Path, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Archive infrastructure failures so a resumed replay retries those jobs."""
+    completed = [item for item in results if item.get("new_eqc") is not None]
+    retryable = [item for item in results if item.get("new_eqc") is None]
+    if retryable:
+        history_path = results_path.with_name("retry-history.jsonl")
+        with history_path.open("a", encoding="utf-8", newline="\n") as stream:
+            for item in retryable:
+                stream.write(json.dumps(item, ensure_ascii=False) + "\n")
+        results_path.write_text(
+            json.dumps(completed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+        )
+    return completed
+
+
+def ledger_candidate_snapshot(eval_root: Path, baseline: dict[str, Any]) -> tuple[Path, str]:
+    """Resolve the selected, pre-verifier candidate from the immutable run ledger."""
+    run_dir = (
+        Path(eval_root).resolve() / "records" / baseline["sample_id"] / baseline["run_id"]
+    )
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    selected = baseline.get("selected_attempt_id")
+    attempt = next(
+        (item for item in run.get("attempts", []) if item.get("attempt_id") == selected),
+        None,
+    )
+    if attempt is None:
+        raise ValueError(f"Selected attempt {selected!r} is absent from ledger run {run_dir}")
+    candidates = [
+        item for item in attempt.get("artifacts", []) if item.get("role") == "candidate"
+    ]
+    if not candidates:
+        raise ValueError(f"Selected attempt {selected!r} has no candidate snapshot")
+    artifact = candidates[-1]
+    candidate = (run_dir / artifact["stored_path"]).resolve()
+    try:
+        candidate.relative_to(run_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("Ledger candidate path escapes its run directory") from exc
+    actual = sha256_file(candidate)
+    if actual != artifact.get("sha256"):
+        raise ValueError(f"Ledger candidate hash mismatch: {candidate}")
+    return candidate, actual
+
+
 def _source_paths(workspace: Path) -> list[Path]:
     return [
         workspace / "src/cad_evoloop/verification/verify.py",
@@ -60,6 +105,7 @@ def replay_verifier(
     campaign_id: str,
     vlm_model: str = "gpt-5.5",
     confidence_threshold: float = 0.85,
+    max_evaluations: int = 3,
     max_jobs: int | None = None,
 ) -> dict[str, Any]:
     baseline_campaign = Path(baseline_campaign).resolve()
@@ -73,10 +119,15 @@ def replay_verifier(
     baseline_results = json.loads((baseline_campaign / "results.json").read_text(encoding="utf-8"))
     if max_jobs is not None:
         baseline_results = baseline_results[:max_jobs]
-    jobs = [
-        {"sample_id": item["sample_id"], "model": item["model"]}
-        for item in baseline_results
-    ]
+    jobs = []
+    for item in baseline_results:
+        candidate, candidate_sha256 = ledger_candidate_snapshot(eval_root, item)
+        jobs.append({
+            "sample_id": item["sample_id"],
+            "model": item["model"],
+            "candidate_sha256": candidate_sha256,
+            "candidate_source": candidate.relative_to(eval_root).as_posix(),
+        })
     manifest = build_campaign_manifest(
         campaign_id=campaign_id,
         mode="pilot",
@@ -93,6 +144,7 @@ def replay_verifier(
             "baseline_manifest_sha256": baseline_manifest["manifest_sha256"],
             "vlm_model": vlm_model,
             "confidence_threshold": confidence_threshold,
+            "max_evaluations": max_evaluations,
             "jobs": jobs,
         },
     )
@@ -100,6 +152,7 @@ def replay_verifier(
     write_immutable_manifest(output_dir / "campaign-manifest.json", manifest)
     results_path = output_dir / "results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else []
+    results = retain_completed_results(results_path, results)
     completed = {(item["sample_id"], item["model"]) for item in results}
     for baseline in baseline_results:
         key = (baseline["sample_id"], baseline["model"])
@@ -110,7 +163,7 @@ def replay_verifier(
         baseline_job = Path(baseline["job_dir"]).resolve()
         job_dir = output_dir / baseline["sample_id"] / baseline["model"].replace(".", "-")
         job_dir.mkdir(parents=True, exist_ok=True)
-        candidate = baseline_job / "candidate.dwg"
+        candidate, baseline_candidate_sha256 = ledger_candidate_snapshot(eval_root, baseline)
         scene_path = job_dir / "scene.json"
         deterministic_path = job_dir / "deterministic-verdict.json"
         render_path = job_dir / "candidate-top.png"
@@ -158,8 +211,11 @@ def replay_verifier(
                     work_dir=job_dir / "vlm-work",
                     model=vlm_model,
                     confidence_threshold=confidence_threshold,
+                    max_evaluations=max_evaluations,
                 )
             eqc = evidence_qualified_completion(deterministic, visual)
+            if sha256_file(candidate) != baseline_candidate_sha256:
+                raise RuntimeError("Verifier replay mutated the frozen baseline candidate")
             verdict = {**deterministic, "visual_evidence": visual, "eqc": eqc}
             final_path.write_text(json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             status = "passed" if eqc["success"] else "failed"
@@ -167,6 +223,13 @@ def replay_verifier(
             coverage = eqc["coverage"]
         except Exception as exc:
             errors.append(repr(exc))
+            status = "evaluation-incomplete"
+            new_eqc = None
+            coverage = None
+        if sha256_file(candidate) != baseline_candidate_sha256:
+            message = "Verifier replay mutated the frozen baseline candidate"
+            if not any(message in error for error in errors):
+                errors.append(message)
             status = "evaluation-incomplete"
             new_eqc = None
             coverage = None
@@ -182,7 +245,8 @@ def replay_verifier(
             "new_eqc": new_eqc,
             "delta": None if new_eqc is None else round(float(new_eqc) - float(baseline.get("eqc", 0)), 2),
             "coverage": coverage,
-            "candidate_sha256": sha256_file(candidate),
+            "candidate_sha256": baseline_candidate_sha256,
+            "candidate_source": candidate.relative_to(eval_root).as_posix(),
             "baseline_run_id": baseline.get("run_id"),
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "errors": errors,

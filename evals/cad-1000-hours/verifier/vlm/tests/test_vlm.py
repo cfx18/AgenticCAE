@@ -6,7 +6,11 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from verifier.vlm.evaluate import evaluate_visual_gaps, merge_visual_result
+from verifier.vlm.evaluate import (
+    aggregate_visual_results,
+    evaluate_visual_gaps,
+    merge_visual_result,
+)
 from verifier.vlm.provider import CodexCliProvider, validate_visual_result
 from verifier.vlm.render_scene import render_scene
 
@@ -60,6 +64,32 @@ def test_low_confidence_remains_incomplete() -> None:
     merged = merge_visual_result(deterministic(), visual_result(confidence=0.5), ["R1"], 0.85)
     assert merged["decision"] == "incomplete"
     assert merged["coverage_after"] == 66.67
+
+
+def test_two_thirds_low_confidence_consensus_resolves() -> None:
+    aggregate = aggregate_visual_results([
+        visual_result(confidence=0.72),
+        visual_result(confidence=0.78),
+        visual_result(verdict="uncertain", confidence=0.4),
+    ], ["R1"])
+
+    merged = merge_visual_result(deterministic(), aggregate, ["R1"], 0.85)
+
+    assert merged["decision"] == "pass"
+    assert merged["resolved"][0]["accepted_by_consensus"] is True
+
+
+def test_split_consensus_remains_incomplete() -> None:
+    aggregate = aggregate_visual_results([
+        visual_result(verdict="pass", confidence=0.9),
+        visual_result(verdict="fail", confidence=0.9),
+        visual_result(verdict="uncertain", confidence=0.4),
+    ], ["R1"])
+
+    merged = merge_visual_result(deterministic(), aggregate, ["R1"], 0.85)
+
+    assert merged["decision"] == "incomplete"
+    assert merged["unresolved"][0]["consensus"]["required_votes"] == 2
 
 
 def test_visual_pass_cannot_override_deterministic_failure() -> None:
@@ -146,6 +176,47 @@ def test_evaluate_visual_gaps_writes_auditable_result(tmp_path: Path, monkeypatc
     assert result["combined"]["decision"] == "pass"
     assert result["combined"]["coverage_after"] == 100.0
     assert json.loads(output.read_text(encoding="utf-8"))["target_rubric_ids"] == ["R1"]
+
+
+def test_low_confidence_evaluation_expands_to_consensus(tmp_path: Path, monkeypatch) -> None:
+    sample = tmp_path / "sample"
+    sample.mkdir()
+    (sample / "task_desc.json").write_text('{"task":"draw"}', encoding="utf-8")
+    (sample / "rubrics.json").write_text(json.dumps({
+        "rubrics": [{"id": "R1", "requirement": "Visible profile"}],
+    }), encoding="utf-8")
+    deterministic_path = tmp_path / "deterministic.json"
+    deterministic_path.write_text(json.dumps(deterministic()), encoding="utf-8")
+    candidate = tmp_path / "candidate.png"
+    reference = tmp_path / "reference.png"
+    Image.new("RGB", (32, 32), "white").save(candidate)
+    Image.new("RGB", (32, 32), "white").save(reference)
+    calls = []
+
+    def fake_evaluate(self, prompt, images, schema_path, work_dir, expected_ids):
+        calls.append(work_dir)
+        return visual_result(confidence=0.75), {
+            "provider": "test", "model": self.model, "usage": {"input_tokens": 10},
+            "elapsed_seconds": 1,
+        }
+
+    monkeypatch.setattr(
+        "cad_evoloop.verification.vlm.evaluate.CodexCliProvider.evaluate", fake_evaluate,
+    )
+
+    result = evaluate_visual_gaps(
+        sample_dir=sample,
+        deterministic_path=deterministic_path,
+        candidate_images=[candidate],
+        reference_images=[reference],
+        output=tmp_path / "visual.json",
+        work_dir=tmp_path / "work",
+        max_evaluations=3,
+    )
+
+    assert len(calls) == 3
+    assert result["combined"]["decision"] == "pass"
+    assert result["provider"]["usage"]["input_tokens"] == 30
 
 
 def test_provider_retains_evaluator_usage_and_output_paths(tmp_path: Path, monkeypatch) -> None:
