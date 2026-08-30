@@ -40,6 +40,8 @@ cad-evoloop-geometry-materialize = "cad_evoloop.cli:_materialize_geometry"
 cad-evoloop-geometry-score = "cad_evoloop.cli:_score_geometry"
 cad-evoloop-geometry-calibrate = "cad_evoloop.cli:_calibrate_geometry"
 cad-evoloop-geometry-export = "cad_evoloop.cli:_export_geometry"
+cad-evoloop-geometry-batch = "cad_evoloop.cli:_batch_geometry"
+cad-evoloop-geometry-report = "cad_evoloop.cli:_report_geometry"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

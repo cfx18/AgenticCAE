@@ -8,16 +8,20 @@ from .explorer import generate_explorer_bundle
 from .replay import replay_summary, replay_verifier
 from .geometry_dataset import materialize_geometry_pilot
 from .geometry_score import calibrate_geometry_manifest, score_geometry_files
+from .geometry_campaign import run_geometry_campaign
+from .geometry_report import generate_geometry_campaign_report
 
 __all__ = [
     "build_campaign_manifest",
     "calibrate_geometry_manifest",
     "evidence_qualified_completion",
     "generate_campaign_report",
+    "generate_geometry_campaign_report",
     "generate_explorer_bundle",
     "materialize_geometry_pilot",
     "replay_summary",
     "replay_verifier",
+    "run_geometry_campaign",
     "score_geometry_files",
     "export_agent_inputs",
     "input_inventory",

@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "kind": "ground-truth-cross-format-calibration",
+  "created_at": "2026-08-30",
+  "source": {
+    "dataset": "OmniMech official samples",
+    "archive_sha256": "fc367f71c548aa70429c3cedf48ae4daab650857d46eb97e119d77df194e202e",
+    "license": null,
+    "redistribution": "evaluator-only until upstream terms are declared"
+  },
+  "materialized_manifest_sha256": "28d191d3cd7193a5c2bd53f212d5095248ab7e9c89da95c05f68776859c061f4",
+  "parameters": {
+    "surface_samples": 20000,
+    "voxel_resolution": 48
+  },
+  "strict_thresholds": {
+    "voxel_iou_min": 0.99,
+    "normalized_chamfer_max": 0.006,
+    "bbox_relative_error_max": 0.002,
+    "volume_relative_error_max": 0.005,
+    "candidate_watertight": true
+  },
+  "summary": {
+    "pairs": 10,
+    "passed": 10,
+    "failed": 0,
+    "minimum_voxel_iou": 0.996149,
+    "maximum_normalized_chamfer": 0.005105,
+    "maximum_bbox_relative_error": 0.000251,
+    "maximum_volume_relative_error": 0.001549,
+    "mean_voxel_iou": 0.99941,
+    "mean_normalized_chamfer": 0.004413,
+    "mean_volume_relative_error": 0.000479
+  }
+}

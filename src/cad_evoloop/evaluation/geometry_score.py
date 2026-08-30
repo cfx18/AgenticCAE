@@ -10,8 +10,15 @@ import statistics
 from typing import Any
 
 
-PROTOCOL_ID = "evocad-geometry-v1"
+PROTOCOL_ID = "evocad-geometry-v2"
 DEFAULT_THRESHOLDS = {
+    "voxel_iou_min": 0.99,
+    "normalized_chamfer_max": 0.006,
+    "bbox_relative_error_max": 0.002,
+    "volume_relative_error_max": 0.005,
+    "candidate_watertight": True,
+}
+ACCEPTABLE_THRESHOLDS = {
     "voxel_iou_min": 0.95,
     "normalized_chamfer_max": 0.01,
     "bbox_relative_error_max": 0.01,
@@ -151,6 +158,53 @@ def _chamfer(candidate, target, cKDTree, np) -> float:
     return float((forward + backward) / 2.0)
 
 
+def _distance_diagnostics(candidate, ground_truth, sample_count: int, cKDTree, np):
+    candidate_points = _surface_samples(candidate, sample_count, np)
+    target_points = _surface_samples(ground_truth, sample_count, np)
+    candidate_distances = cKDTree(target_points).query(candidate_points, workers=-1)[0]
+    target_distances = cKDTree(candidate_points).query(target_points, workers=-1)[0]
+    diagonal = float(np.linalg.norm(ground_truth.extents))
+    lower = ground_truth.bounds[0]
+    extents = np.maximum(ground_truth.extents, diagonal * 1e-9)
+
+    def summarize(distances, points):
+        worst = int(np.argmax(distances))
+        return {
+            "p50_normalized": round(float(np.quantile(distances, 0.5) / diagonal), 6),
+            "p95_normalized": round(float(np.quantile(distances, 0.95) / diagonal), 6),
+            "max_normalized": round(float(distances[worst] / diagonal), 6),
+            "worst_point_bbox_position": (
+                (points[worst] - lower) / extents
+            ).round(4).tolist(),
+        }
+
+    return {
+        "candidate_to_ground_truth": summarize(candidate_distances, candidate_points),
+        "ground_truth_to_candidate": summarize(target_distances, target_points),
+    }
+
+
+def _threshold_score(value: float, threshold: float) -> float:
+    return max(0.0, min(1.0, 2.0 - value / threshold))
+
+
+def geometry_quality_score(metrics: dict[str, Any], *, watertight: bool) -> float:
+    """Return a continuous progress score without replacing strict passage."""
+    score = 0.0
+    score += 35.0 * max(0.0, min(1.0, metrics["voxel_iou"] / DEFAULT_THRESHOLDS["voxel_iou_min"]))
+    score += 25.0 * _threshold_score(
+        metrics["normalized_chamfer"], DEFAULT_THRESHOLDS["normalized_chamfer_max"],
+    )
+    score += 15.0 * _threshold_score(
+        metrics["bbox_relative_error"], DEFAULT_THRESHOLDS["bbox_relative_error_max"],
+    )
+    score += 20.0 * _threshold_score(
+        metrics["volume_relative_error"], DEFAULT_THRESHOLDS["volume_relative_error_max"],
+    )
+    score += 5.0 if watertight else 0.0
+    return round(score, 2)
+
+
 def _aligned_candidate(candidate, ground_truth, sample_count: int):
     _, np, cKDTree, _ = _dependencies()
     candidate_points = _surface_samples(candidate, sample_count, np)
@@ -184,7 +238,7 @@ def score_geometry_files(
 ) -> dict[str, Any]:
     if sample_count <= 0 or voxel_resolution < 16:
         raise ValueError("sample_count must be positive and voxel_resolution must be at least 16")
-    _, np, _, _ = _dependencies()
+    _, np, cKDTree, _ = _dependencies()
     candidate_path = Path(candidate_path).resolve()
     ground_truth_path = Path(ground_truth_path).resolve()
     if not candidate_path.is_file() or not ground_truth_path.is_file():
@@ -211,6 +265,14 @@ def score_geometry_files(
         abs(float(ground_truth.area)), diagonal ** 2 * 1e-9,
     )
     normalized_chamfer = chamfer / diagonal
+    metrics = {
+        "voxel_iou": round(float(voxel_iou), 6),
+        "chamfer_distance": round(float(chamfer), 6),
+        "normalized_chamfer": round(float(normalized_chamfer), 6),
+        "bbox_relative_error": round(float(bbox_error), 6),
+        "volume_relative_error": round(float(volume_error), 6),
+        "surface_area_relative_error": round(float(area_error), 6),
+    }
     checks = {
         "candidate_watertight": bool(aligned.is_watertight),
         "voxel_iou": voxel_iou >= DEFAULT_THRESHOLDS["voxel_iou_min"],
@@ -218,26 +280,36 @@ def score_geometry_files(
         "bbox_relative_error": bbox_error <= DEFAULT_THRESHOLDS["bbox_relative_error_max"],
         "volume_relative_error": volume_error <= DEFAULT_THRESHOLDS["volume_relative_error_max"],
     }
+    acceptable_checks = {
+        "candidate_watertight": bool(aligned.is_watertight),
+        "voxel_iou": voxel_iou >= ACCEPTABLE_THRESHOLDS["voxel_iou_min"],
+        "normalized_chamfer": normalized_chamfer <= ACCEPTABLE_THRESHOLDS["normalized_chamfer_max"],
+        "bbox_relative_error": bbox_error <= ACCEPTABLE_THRESHOLDS["bbox_relative_error_max"],
+        "volume_relative_error": volume_error <= ACCEPTABLE_THRESHOLDS["volume_relative_error_max"],
+    }
+    quality_tier = "strict" if all(checks.values()) else (
+        "acceptable" if all(acceptable_checks.values()) else "failed"
+    )
     return {
         "schema_version": "1.0",
         "protocol": PROTOCOL_ID,
         "candidate": str(candidate_path),
         "ground_truth": str(ground_truth_path),
         "passed": all(checks.values()),
+        "quality_tier": quality_tier,
+        "score": geometry_quality_score(metrics, watertight=bool(aligned.is_watertight)),
+        "coverage": 100.0,
         "checks": checks,
+        "acceptable_checks": acceptable_checks,
         "alignment": {
             "type": "right-handed-axis-permutation-plus-translation",
             "rotation": rotation.round(6).tolist(),
             "scale_allowed": False,
         },
-        "metrics": {
-            "voxel_iou": round(float(voxel_iou), 6),
-            "chamfer_distance": round(float(chamfer), 6),
-            "normalized_chamfer": round(float(normalized_chamfer), 6),
-            "bbox_relative_error": round(float(bbox_error), 6),
-            "volume_relative_error": round(float(volume_error), 6),
-            "surface_area_relative_error": round(float(area_error), 6),
-        },
+        "metrics": metrics,
+        "mismatch": _distance_diagnostics(
+            aligned, ground_truth, sample_count, cKDTree, np,
+        ),
         "candidate_geometry": {
             "vertices": int(len(aligned.vertices)),
             "triangles": int(len(aligned.faces)),
@@ -259,6 +331,7 @@ def score_geometry_files(
             "voxel_resolution": voxel_resolution,
             "voxel_pitch": round(float(pitch), 6),
             "thresholds": DEFAULT_THRESHOLDS,
+            "acceptable_thresholds": ACCEPTABLE_THRESHOLDS,
         },
     }
 

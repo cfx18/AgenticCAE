@@ -39,11 +39,13 @@ cad-evoloop geometry-calibrate .local/datasets/evocad/materialized/geometry-pilo
   --output .local/datasets/evocad/geometry-runs/calibration.json
 ```
 
-Protocol `evocad-geometry-v1` permits translation and the 24 right-handed axis
+Protocol `evocad-geometry-v2` permits translation and the 24 right-handed axis
 orientations, but never scale. Strict passage requires a watertight candidate,
-voxel IoU at least 0.95, normalized symmetric Chamfer at most 0.01, mean
-bounding-box relative error at most 0.01, and volume relative error at most
-0.02. Surface sampling defaults to 20,000 deterministic points.
+voxel IoU at least 0.99, normalized symmetric Chamfer at most 0.006, mean
+bounding-box relative error at most 0.002, and volume relative error at most
+0.005. The older v1 thresholds are retained as the `acceptable` tier rather
+than being reported as strict completion. Surface sampling defaults to 20,000
+deterministic points. Both tiers are calibrated against ten STEP/STL pairs.
 
 For native AutoCAD candidates, export and score without opening desktop
 AutoCAD:
@@ -54,6 +56,21 @@ cad-evoloop geometry-score .local/datasets/evocad/runs/candidate.stl ground_trut
   --output .local/datasets/evocad/runs/score.json
 ```
 
-The committed `protocol-v1.json` is the machine-readable metric definition.
-`calibration-v1.json` records the reference cross-format calibration; raw data
-remains local because not every upstream source has redistribution terms.
+Run a trajectory-recorded Codex/AutoCAD campaign. Ground-truth paths are not
+staged into the agent directory; repair turns receive sanitized numerical
+feedback. Attempts stop on strict passage, two consecutive non-improvements,
+or the time budget, with five attempts only as a safety ceiling.
+
+```powershell
+cad-evoloop geometry-batch `
+  .local/datasets/evocad/materialized/geometry-pilot-v1/manifest.json `
+  --campaign geometry-pilot-v2 --model gpt-5.6-sol --max-jobs 10
+
+cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-pilot-v2 `
+  --output reports/generated/geometry-pilot-v2
+```
+
+The committed protocol and calibration JSON files preserve both v1 and v2.
+Raw data remains local because not every upstream source has redistribution
+terms. Campaign trajectories and binary candidates are also local and ignored;
+their manifests bind sources, inputs, and ground truth by SHA-256.

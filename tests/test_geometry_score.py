@@ -1,9 +1,25 @@
 from __future__ import annotations
 
-import pytest
 import json
+from pathlib import Path
+
+import pytest
 
 from cad_evoloop.evaluation import geometry_score
+
+
+def test_protocol_v2_matches_implementation_thresholds() -> None:
+    protocol_path = (
+        Path(__file__).resolve().parents[1]
+        / "evals"
+        / "geometry-benchmarks"
+        / "protocol-v2.json"
+    )
+    protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
+
+    assert protocol["protocol"] == geometry_score.PROTOCOL_ID
+    assert protocol["strict_thresholds"] == geometry_score.DEFAULT_THRESHOLDS
+    assert protocol["acceptable_thresholds"] == geometry_score.ACCEPTABLE_THRESHOLDS
 
 
 def test_geometry_score_reports_missing_optional_dependencies(monkeypatch) -> None:
@@ -39,10 +55,14 @@ def test_geometry_score_accepts_identity_and_rejects_scaled_shape(tmp_path) -> N
     )
 
     assert identity["passed"] is True
-    assert identity["protocol"] == "evocad-geometry-v1"
-    assert identity["parameters"]["thresholds"]["voxel_iou_min"] == 0.95
+    assert identity["protocol"] == "evocad-geometry-v2"
+    assert identity["parameters"]["thresholds"]["voxel_iou_min"] == 0.99
     assert identity["metrics"]["voxel_iou"] == 1.0
+    assert identity["score"] == 100.0
+    assert identity["coverage"] == 100.0
+    assert identity["mismatch"]["candidate_to_ground_truth"]["max_normalized"] == 0.0
     assert wrong["passed"] is False
+    assert wrong["score"] < identity["score"]
     assert wrong["metrics"]["bbox_relative_error"] == pytest.approx(0.2)
 
 

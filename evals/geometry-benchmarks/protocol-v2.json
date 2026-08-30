@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "supersedes": "evocad-geometry-v1",
+  "candidate_formats": ["step", "stp", "stl", "obj", "ply"],
+  "alignment": {
+    "translation": true,
+    "right_handed_axis_orientations": 24,
+    "scale": false
+  },
+  "sampling": {
+    "method": "deterministic-area-weighted-surface",
+    "seed": 20260830,
+    "points": 20000
+  },
+  "voxel_resolution": 64,
+  "strict_thresholds": {
+    "candidate_watertight": true,
+    "voxel_iou_min": 0.99,
+    "normalized_chamfer_max": 0.006,
+    "bbox_relative_error_max": 0.002,
+    "volume_relative_error_max": 0.005
+  },
+  "acceptable_thresholds": {
+    "candidate_watertight": true,
+    "voxel_iou_min": 0.95,
+    "normalized_chamfer_max": 0.01,
+    "bbox_relative_error_max": 0.01,
+    "volume_relative_error_max": 0.02
+  },
+  "strict_pass": "all strict thresholds must pass",
+  "rationale": "Strict thresholds exceed the ten-pair STEP/STL calibration envelope while rejecting visible feature and dimension errors that v1 classified as complete."
+}

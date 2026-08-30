@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-geometry-v2",
+  "campaign": "geometry-smoke-v2",
+  "date": "2026-08-30",
+  "sample_id": "omnimech:1",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "ground_truth_sha256": "7494b48c43e6699b44301d6887f849e13deb63295481b15d4afe6bb477923d02",
+  "selected_attempt_id": "a003",
+  "strict_pass": false,
+  "best_score": 98.31,
+  "attempts": [
+    {
+      "attempt_id": "a001",
+      "score": 79.49,
+      "quality_tier": "acceptable",
+      "voxel_iou": 0.975698,
+      "normalized_chamfer": 0.005945,
+      "volume_relative_error": 0.016297
+    },
+    {
+      "attempt_id": "a002",
+      "score": 73.6,
+      "quality_tier": "failed",
+      "voxel_iou": 0.949744,
+      "normalized_chamfer": 0.007194,
+      "volume_relative_error": 0.018856
+    },
+    {
+      "attempt_id": "a003",
+      "score": 98.31,
+      "quality_tier": "acceptable",
+      "voxel_iou": 0.97107,
+      "normalized_chamfer": 0.006246,
+      "volume_relative_error": 0.003866
+    }
+  ],
+  "recovery_gain": 18.82,
+  "ledger_integrity": {
+    "ok": true,
+    "checked_files": 35,
+    "events": 81
+  },
+  "notes": [
+    "The v1 thresholds classified attempt a001 as complete; v2 correctly retained it as acceptable only.",
+    "Attempt a002 regressed after over-applying C0.5 relief. Attempt a003 improved volume accuracy and became the selected checkpoint.",
+    "The run exposed a missing latest-attempt feedback channel; the runner now provides both best-checkpoint and latest-attempt verdicts."
+  ]
+}

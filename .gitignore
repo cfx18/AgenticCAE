@@ -15,6 +15,9 @@ evals/cad-1000-hours/improvement/adaptive/
 evals/cad-1000-hours/improvement/proposals/
 evals/cad-1000-hours/samples/
 evals/cad-1000-hours/improvement/campaigns/
+evals/geometry-benchmarks/batch/
+evals/geometry-benchmarks/records/
+evals/geometry-benchmarks/samples/
 
 # AutoCAD jobs, checkpoints, and local application state.
 mcp/jobs/
