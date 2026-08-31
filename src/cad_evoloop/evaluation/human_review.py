@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 from pathlib import Path
+import socket
 from typing import Any
 import urllib.parse
 import uuid
@@ -364,6 +365,13 @@ class HumanReviewStore:
 
 class _ReviewServer(ThreadingHTTPServer):
     daemon_threads = True
+    allow_reuse_address = False
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(self, address, handler, *, app_dir: Path, bundle_dir: Path, store: HumanReviewStore):
         super().__init__(address, handler)

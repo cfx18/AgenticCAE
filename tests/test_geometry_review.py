@@ -7,7 +7,11 @@ import pytest
 
 from cad_evoloop.evaluation import geometry_review
 from cad_evoloop.evaluation.geometry_review import generate_geometry_review_bundle
-from cad_evoloop.evaluation.human_review import HumanReviewStore
+from cad_evoloop.evaluation.human_review import (
+    GeometryReviewHandler,
+    HumanReviewStore,
+    _ReviewServer,
+)
 from cad_evoloop.ledger.ledger import sha256_file
 
 
@@ -212,6 +216,24 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert 'import("./geometry-viewer.js?v=7")' in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer
+
+
+def test_geometry_review_server_rejects_duplicate_listener(tmp_path: Path) -> None:
+    store = object()
+    first = _ReviewServer(
+        ("127.0.0.1", 0), GeometryReviewHandler,
+        app_dir=tmp_path, bundle_dir=tmp_path, store=store,
+    )
+    try:
+        host, port = first.server_address
+        with pytest.raises(OSError):
+            duplicate = _ReviewServer(
+                (host, port), GeometryReviewHandler,
+                app_dir=tmp_path, bundle_dir=tmp_path, store=store,
+            )
+            duplicate.server_close()
+    finally:
+        first.server_close()
 
 
 def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatch) -> None:
