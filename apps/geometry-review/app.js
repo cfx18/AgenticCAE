@@ -1,10 +1,10 @@
-import { createSynchronizedGeometryViewers } from "./geometry-viewer.js";
-
 const state = {
   data: null, reviews: null, selectedTarget: null, selectedAttempt: null,
   inputIndex: 0, reviewStartedAt: Date.now(), filters: { dataset: "all", model: "all", outcome: "all", review: "all" },
 };
 let geometryViewers = null;
+let geometryModulePromise = null;
+let geometryLoadGeneration = 0;
 
 const ISSUE_LABELS = {
   agent_geometry: "Agent geometry", agent_reasoning: "Agent reasoning", input_ambiguity: "Input ambiguity",
@@ -124,6 +124,34 @@ function setImage(id, source, emptyText) {
   image.parentElement.dataset.empty = source ? "" : emptyText;
 }
 
+async function mountGeometryViewers(attempt) {
+  const generation = ++geometryLoadGeneration;
+  geometryViewers?.dispose();
+  geometryViewers = null;
+  try {
+    geometryModulePromise ||= import("./geometry-viewer.js?v=4");
+    const { createSynchronizedGeometryViewers } = await geometryModulePromise;
+    if (generation !== geometryLoadGeneration) return;
+    geometryViewers = createSynchronizedGeometryViewers({
+      containers: {
+        truth: $("truthViewer"), candidate: $("candidateViewer"), overlay: $("overlayViewer"),
+      },
+      geometry: attempt.geometry || {},
+    });
+  } catch (error) {
+    if (generation !== geometryLoadGeneration) return;
+    console.error("Interactive geometry viewer unavailable", error);
+    for (const id of ("truthViewer", "candidateViewer", "overlayViewer")) {
+      const container = $(id);
+      if (!container) continue;
+      container.dataset.viewerState = "fallback";
+      const hasFallback = Boolean(container.querySelector(".geometry-fallback")?.getAttribute("src"));
+      const status = container.querySelector(".viewer-status");
+      if (status) status.textContent = hasFallback ? "" : `3D viewer unavailable: ${error.message}`;
+    }
+  }
+}
+
 function renderEvidence(run, attempt) {
   const inputs = run.input_images || [];
   setImage("inputImage", inputs[state.inputIndex], "Input image unavailable");
@@ -132,13 +160,7 @@ function renderEvidence(run, attempt) {
   setImage("truthImage", attempt.images.ground_truth, "Ground-truth render unavailable");
   setImage("candidateImage", attempt.images.candidate, "Candidate render unavailable");
   setImage("overlayImage", attempt.images.overlay, "Overlay unavailable");
-  geometryViewers?.dispose();
-  geometryViewers = createSynchronizedGeometryViewers({
-    containers: {
-      truth: $("truthViewer"), candidate: $("candidateViewer"), overlay: $("overlayViewer"),
-    },
-    geometry: attempt.geometry || {},
-  });
+  mountGeometryViewers(attempt);
   $("candidateCaption").textContent = attempt.attempt_id;
   $("truthCaption").textContent = `SHA ${shortHash(run.ground_truth_sha256)}`;
   $("candidateState").textContent = `SHA ${shortHash(attempt.evidence?.candidate?.sha256)}`;
@@ -348,6 +370,12 @@ async function start() {
   setOptions($("datasetFilter"), [...new Set(state.data.runs.map((run) => run.dataset))].sort(), "All datasets");
   setOptions($("modelFilter"), state.data.models, "All models");
   renderHeader(); resetReviewForm(); renderRunList();
+  document.documentElement.dataset.appState = "ready";
 }
 
-start().catch((error) => { $("taskTitle").textContent = error.message; $("ledgerIntegrity").textContent = "Data unavailable"; });
+start().catch((error) => {
+  document.documentElement.dataset.appState = "failed";
+  $("campaignName").textContent = "Load failed";
+  $("taskTitle").textContent = error.message;
+  $("ledgerIntegrity").textContent = "Data unavailable";
+});

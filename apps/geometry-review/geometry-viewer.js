@@ -49,12 +49,14 @@ class GeometryViewport {
   }
 
   showInteractive() {
+    this.container.dataset.viewerState = "ready";
     this.canvas.hidden = false;
     if (this.fallback) this.fallback.hidden = true;
     this.status.textContent = "";
   }
 
   showFallback(message) {
+    this.container.dataset.viewerState = message === "Loading geometry" ? "loading" : "fallback";
     this.canvas.hidden = true;
     const hasFallback = Boolean(this.fallback?.getAttribute("src"));
     if (this.fallback) this.fallback.hidden = !hasFallback;
@@ -114,12 +116,18 @@ class SynchronizedGeometryViewers {
 
   async loadGeometry(path) {
     if (!path) return null;
-    const response = await fetch(path);
-    if (!response.ok) throw new Error(`Geometry request failed: ${response.status}`);
-    const geometry = new STLLoader().parse(await response.arrayBuffer());
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-    return geometry;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(path, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`Geometry request failed: ${response.status}`);
+      const geometry = new STLLoader().parse(await response.arrayBuffer());
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      return geometry;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async load() {
@@ -214,7 +222,7 @@ export function createSynchronizedGeometryViewers({ containers, geometry }) {
   try {
     return new SynchronizedGeometryViewers(containers, geometry);
   } catch (error) {
-    Object.values(containers).forEach((container) => {
+    Object.values(containers).filter(Boolean).forEach((container) => {
       const canvas = container.querySelector("canvas");
       const fallback = container.querySelector(".geometry-fallback");
       const status = container.querySelector(".viewer-status");
@@ -222,6 +230,7 @@ export function createSynchronizedGeometryViewers({ containers, geometry }) {
       const hasFallback = Boolean(fallback?.getAttribute("src"));
       if (fallback) fallback.hidden = !hasFallback;
       if (status) status.textContent = hasFallback ? "" : `3D viewer unavailable: ${error.message}`;
+      container.dataset.viewerState = "fallback";
     });
     return { dispose() {} };
   }
