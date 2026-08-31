@@ -190,21 +190,26 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=6"' in html
+    assert 'src="app.js?v=7"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
     three_module = (root / "vendor/three/three.module.min.js").read_text(encoding="utf-8")
     assert "OrbitControls" in viewer
     assert "syncFrom" in viewer
     assert "AbortController" in viewer
+    assert "getSharedRenderer" in viewer
+    assert 'getContext("2d")' in viewer
+    assert "preserveDrawingBuffer: true" in viewer
     assert 'from "./vendor/three/three.module.min.js"' in viewer
     assert 'from"./three.core.min.js"' in three_module
     assert (root / "vendor/three/three.core.min.js").stat().st_size > 300_000
     assert 'type="importmap"' not in html
     assert 'max-height: 100%' in styles
+    assert 'height: clamp(260px, 38vh, 440px)' in styles
+    assert 'aspect-ratio: 1' in styles
     assert 'cursor: grab' in styles
     assert 'pointer-events: auto' in styles
-    assert 'import("./geometry-viewer.js?v=6")' in script
+    assert 'import("./geometry-viewer.js?v=7")' in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer
 

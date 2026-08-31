@@ -4,6 +4,18 @@ import { STLLoader } from "./vendor/three/addons/loaders/STLLoader.js";
 
 const VIEW_DIRECTION = new THREE.Vector3(1, -1.25, 0.85).normalize();
 const COLORS = { truth: 0x4397b8, candidate: 0xdf843d };
+let sharedRenderer = null;
+
+function getSharedRenderer() {
+  if (sharedRenderer) return sharedRenderer;
+  const canvas = document.createElement("canvas");
+  sharedRenderer = new THREE.WebGLRenderer({
+    canvas, antialias: true, preserveDrawingBuffer: true, powerPreference: "low-power",
+  });
+  sharedRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  sharedRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  return sharedRenderer;
+}
 
 class GeometryViewport {
   constructor(container, manager) {
@@ -15,9 +27,8 @@ class GeometryViewport {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1c252c);
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 10000);
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.context = this.canvas.getContext("2d");
+    if (!this.context) throw new Error("2D display canvas is unavailable");
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = false;
     this.controls.screenSpacePanning = true;
@@ -66,7 +77,6 @@ class GeometryViewport {
   resize() {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
-    this.renderer.setSize(width, height, false);
     const halfHeight = this.manager.frustumHeight / 2;
     const halfWidth = halfHeight * width / height;
     this.camera.left = -halfWidth;
@@ -78,7 +88,7 @@ class GeometryViewport {
   }
 
   render() {
-    if (!this.canvas.hidden) this.renderer.render(this.scene, this.camera);
+    if (!this.canvas.hidden) this.manager.renderViewport(this);
   }
 
   dispose() {
@@ -89,8 +99,6 @@ class GeometryViewport {
       if (Array.isArray(item.material)) item.material.forEach((material) => material.dispose());
       else item.material?.dispose?.();
     });
-    this.renderer.dispose();
-    this.renderer.forceContextLoss();
   }
 }
 
@@ -102,6 +110,7 @@ class SynchronizedGeometryViewers {
     this.distance = 10;
     this.syncing = false;
     this.disposed = false;
+    this.renderer = getSharedRenderer();
     this.viewports = Object.fromEntries(
       Object.entries(containers).map(([name, container]) => [name, new GeometryViewport(container, this)]),
     );
@@ -112,6 +121,18 @@ class SynchronizedGeometryViewers {
       return { button, handler };
     });
     this.load();
+  }
+
+  renderViewport(viewport) {
+    const width = Math.max(1, viewport.container.clientWidth);
+    const height = Math.max(1, viewport.container.clientHeight);
+    this.renderer.setSize(width, height, false);
+    this.renderer.render(viewport.scene, viewport.camera);
+    const source = this.renderer.domElement;
+    if (viewport.canvas.width !== source.width) viewport.canvas.width = source.width;
+    if (viewport.canvas.height !== source.height) viewport.canvas.height = source.height;
+    viewport.context.clearRect(0, 0, viewport.canvas.width, viewport.canvas.height);
+    viewport.context.drawImage(source, 0, 0, viewport.canvas.width, viewport.canvas.height);
   }
 
   async loadGeometry(path) {

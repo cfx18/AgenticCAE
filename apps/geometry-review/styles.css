@@ -121,9 +121,9 @@ h3 { margin: 0; font-size: 12px; }
 .image-button { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: 0; border: 0; background: #1c252c; overflow: hidden; }
 .image-button img { width: 100%; height: 100%; object-fit: contain; }
 .image-button.missing::after { content: attr(data-empty); color: #aab5bc; font-size: 12px; }
-.reference-image { width: 100%; height: clamp(440px, 62vh, 720px); display: flex; align-items: center; justify-content: center; aspect-ratio: auto; background: #fff; }
+.reference-image { width: 100%; height: clamp(260px, 38vh, 440px); display: flex; align-items: center; justify-content: center; aspect-ratio: auto; background: #fff; }
 .reference-image img { width: auto; height: auto; max-width: 100%; max-height: 100%; flex: 0 0 auto; object-fit: contain; }
-.geometry-viewer { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #1c252c; overflow: hidden; }
+.geometry-viewer { position: relative; width: 100%; aspect-ratio: 1; background: #1c252c; overflow: hidden; }
 .geometry-viewer canvas, .geometry-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
 .geometry-viewer canvas { z-index: 2; display: block; touch-action: none; pointer-events: auto; }
 .geometry-viewer[data-viewer-state="ready"] canvas { cursor: grab; }
