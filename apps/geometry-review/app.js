@@ -147,7 +147,9 @@ async function mountGeometryViewers(attempt) {
       container.dataset.viewerState = "fallback";
       const hasFallback = Boolean(container.querySelector(".geometry-fallback")?.getAttribute("src"));
       const status = container.querySelector(".viewer-status");
-      if (status) status.textContent = hasFallback ? "" : `3D viewer unavailable: ${error.message}`;
+      if (status) status.textContent = hasFallback
+        ? `PNG fallback: 3D module unavailable: ${error.message}`
+        : `3D viewer unavailable: ${error.message}`;
     }
   }
 }

@@ -180,6 +180,7 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     root = Path(__file__).parents[1] / "apps/geometry-review"
     html = (root / "index.html").read_text(encoding="utf-8")
     script = (root / "app.js").read_text(encoding="utf-8")
+    styles = (root / "styles.css").read_text(encoding="utf-8")
     for identifier in (
         "evidencePanel", "verifierPanel", "reflectionPanel", "feedbackPacket", "mcpPanel",
         "reviewForm",
@@ -193,6 +194,10 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert "OrbitControls" in viewer
     assert "syncFrom" in viewer
     assert "AbortController" in viewer
+    assert 'from "./vendor/three/three.module.min.js"' in viewer
+    assert 'type="importmap"' not in html
+    assert 'max-height: 100%' in styles
+    assert 'cursor: grab' in styles
     assert 'import("./geometry-viewer.js?v=4")' in script
 
 

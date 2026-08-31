@@ -1,6 +1,6 @@
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import * as THREE from "./vendor/three/three.module.min.js";
+import { OrbitControls } from "./vendor/three/addons/controls/OrbitControls.js";
+import { STLLoader } from "./vendor/three/addons/loaders/STLLoader.js";
 
 const VIEW_DIRECTION = new THREE.Vector3(1, -1.25, 0.85).normalize();
 const COLORS = { truth: 0x4397b8, candidate: 0xdf843d };
@@ -60,7 +60,7 @@ class GeometryViewport {
     this.canvas.hidden = true;
     const hasFallback = Boolean(this.fallback?.getAttribute("src"));
     if (this.fallback) this.fallback.hidden = !hasFallback;
-    this.status.textContent = hasFallback ? "" : message;
+    this.status.textContent = hasFallback ? `PNG fallback: ${message}` : message;
   }
 
   resize() {

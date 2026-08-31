@@ -8,4 +8,8 @@ self-contained and does not depend on a CDN at review time.
 - `three/addons/loaders/STLLoader.js`: browser loading for hashed STL evidence
 - `three/LICENSE.txt`: upstream MIT license
 
+The two addon imports are patched from the bare `three` specifier to the
+vendored relative module path. This removes the runtime import-map dependency;
+all other upstream source is unchanged.
+
 Source package: <https://www.npmjs.com/package/three/v/0.185.1>
