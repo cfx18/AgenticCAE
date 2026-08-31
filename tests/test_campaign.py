@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from cad_evoloop.ledger import ledger
+
 from cad_evoloop.evaluation.campaign import (
     build_campaign_manifest,
     validate_campaign_manifest,
@@ -99,3 +101,25 @@ def test_manifest_is_immutable_and_tamper_evident(tmp_path: Path) -> None:
     tampered["campaign_id"] = "tampered"
     with pytest.raises(ValueError, match="digest mismatch"):
         validate_campaign_manifest(tampered)
+
+
+def test_atomic_json_write_retries_transient_replace_failure(tmp_path, monkeypatch) -> None:
+    destination = tmp_path / "run.json"
+    real_replace = ledger.os.replace
+    attempts = 0
+
+    def flaky_replace(source, target):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError("transient sharing violation")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(ledger.os, "replace", flaky_replace)
+    monkeypatch.setattr(ledger, "FILE_ACCESS_RETRY_DELAYS", (0, 0))
+
+    ledger.write_json_atomic(destination, {"status": "ok"})
+
+    assert attempts == 3
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"status": "ok"}
+    assert not destination.with_suffix(".json.tmp").exists()

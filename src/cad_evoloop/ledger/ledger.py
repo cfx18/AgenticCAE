@@ -66,8 +66,9 @@ def validate_identifier(value: str, label: str) -> str:
 
 def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    payload = json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+    retry_file_access(lambda: temporary.write_text(payload, encoding="utf-8"))
+    retry_file_access(lambda: os.replace(temporary, path))
 
 
 @contextlib.contextmanager
