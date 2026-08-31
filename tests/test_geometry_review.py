@@ -123,6 +123,8 @@ def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None
     assert run["attempts"][0]["mcp_events"][0]["status"] == "fail"
     assert len(run["attempts"][0]["evidence_sha256"]) == 64
     assert (output / "review-data.json").is_file()
+    assert (output / "app/vendor/three/three.module.min.js").is_file()
+    assert (output / "app/vendor/three/three.core.min.js").is_file()
     assert (output / "app/index.html").is_file()
     assert payload["review_system"]["render_protocol"]["id"] == "evocad-orthographic-evidence-v1"
 
@@ -188,18 +190,21 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=5"' in html
+    assert 'src="app.js?v=6"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
+    three_module = (root / "vendor/three/three.module.min.js").read_text(encoding="utf-8")
     assert "OrbitControls" in viewer
     assert "syncFrom" in viewer
     assert "AbortController" in viewer
     assert 'from "./vendor/three/three.module.min.js"' in viewer
+    assert 'from"./three.core.min.js"' in three_module
+    assert (root / "vendor/three/three.core.min.js").stat().st_size > 300_000
     assert 'type="importmap"' not in html
     assert 'max-height: 100%' in styles
     assert 'cursor: grab' in styles
     assert 'pointer-events: auto' in styles
-    assert 'import("./geometry-viewer.js?v=5")' in script
+    assert 'import("./geometry-viewer.js?v=6")' in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer
 

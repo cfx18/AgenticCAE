@@ -85,6 +85,10 @@ def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
             Path("vendor/three/three.module.min.js"),
         ),
         (
+            implementation_root / "apps/geometry-review/vendor/three/three.core.min.js",
+            Path("vendor/three/three.core.min.js"),
+        ),
+        (
             implementation_root / "apps/geometry-review/vendor/three/addons/controls/OrbitControls.js",
             Path("vendor/three/addons/controls/OrbitControls.js"),
         ),
