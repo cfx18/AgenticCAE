@@ -1004,6 +1004,7 @@ def run_geometry_campaign(
     results_path = campaign_dir / "results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else []
     completed = {(item["sample_id"], item["model"]) for item in results}
+    consecutive_agent_start_failures = 0
     for sample, model in jobs:
         if (sample["sample_id"], model) in completed:
             continue
@@ -1026,6 +1027,21 @@ def run_geometry_campaign(
         results_path.write_text(
             json.dumps(results, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
         )
+        attempts = result.get("attempts") or []
+        first_attempt = attempts[0] if attempts else {}
+        agent_start_failed = (
+            result.get("stop_reason") == "decision_unavailable"
+            and not first_attempt.get("thread_id")
+            and first_attempt.get("return_code") not in (None, 0)
+        )
+        consecutive_agent_start_failures = (
+            consecutive_agent_start_failures + 1 if agent_start_failed else 0
+        )
+        if consecutive_agent_start_failures >= 3:
+            raise RuntimeError(
+                "Geometry campaign aborted after three consecutive Codex agent startup failures; "
+                f"inspect {results_path} and the attempt stderr logs"
+            )
     summary = {
         "campaign": campaign,
         "jobs": len(results),

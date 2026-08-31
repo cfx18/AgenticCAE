@@ -310,6 +310,37 @@ def test_geometry_campaign_binds_benchmark_split(tmp_path, monkeypatch) -> None:
     }
 
 
+def test_geometry_campaign_aborts_after_repeated_agent_start_failures(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = _manifest(workspace / ".local/data")
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    calls = []
+
+    def fail_start(**kwargs):
+        calls.append(kwargs["model"])
+        return {
+            "sample_id": kwargs["sample"]["sample_id"],
+            "model": kwargs["model"],
+            "passed": False,
+            "score": 0.0,
+            "stop_reason": "decision_unavailable",
+            "attempts": [{"thread_id": None, "return_code": 1}],
+        }
+
+    monkeypatch.setattr(geometry_campaign, "run_geometry_job", fail_start)
+
+    with pytest.raises(RuntimeError, match="three consecutive Codex agent startup failures"):
+        geometry_campaign.run_geometry_campaign(
+            manifest,
+            campaign="startup-failure",
+            models=["m1", "m2", "m3", "m4"],
+            executable="codex",
+        )
+
+    assert calls == ["m1", "m2", "m3"]
+
+
 def test_codex_command_mounts_only_audited_autocad_server(tmp_path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
