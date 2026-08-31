@@ -52,7 +52,7 @@ class GeometryViewport {
     this.container.dataset.viewerState = "ready";
     this.canvas.hidden = false;
     if (this.fallback) this.fallback.hidden = true;
-    this.status.textContent = "";
+    this.status.textContent = "3D";
   }
 
   showFallback(message) {
@@ -206,7 +206,7 @@ class SynchronizedGeometryViewers {
         viewport.camera.updateProjectionMatrix();
         viewport.controls.update();
       }
-      viewport.resize();
+      viewport.render();
     }
     this.syncing = false;
   }
@@ -229,7 +229,9 @@ export function createSynchronizedGeometryViewers({ containers, geometry }) {
       if (canvas) canvas.hidden = true;
       const hasFallback = Boolean(fallback?.getAttribute("src"));
       if (fallback) fallback.hidden = !hasFallback;
-      if (status) status.textContent = hasFallback ? "" : `3D viewer unavailable: ${error.message}`;
+      if (status) status.textContent = hasFallback
+        ? `PNG fallback: 3D viewer unavailable: ${error.message}`
+        : `3D viewer unavailable: ${error.message}`;
       container.dataset.viewerState = "fallback";
     });
     return { dispose() {} };

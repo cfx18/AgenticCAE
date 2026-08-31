@@ -125,14 +125,14 @@ h3 { margin: 0; font-size: 12px; }
 .reference-image img { width: auto; height: auto; max-width: 100%; max-height: 100%; flex: 0 0 auto; object-fit: contain; }
 .geometry-viewer { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #1c252c; overflow: hidden; }
 .geometry-viewer canvas, .geometry-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
-.geometry-viewer canvas { display: block; touch-action: none; }
+.geometry-viewer canvas { z-index: 2; display: block; touch-action: none; pointer-events: auto; }
 .geometry-viewer[data-viewer-state="ready"] canvas { cursor: grab; }
 .geometry-viewer[data-viewer-state="ready"] canvas:active { cursor: grabbing; }
 .geometry-viewer canvas[hidden], .geometry-fallback[hidden] { display: none; }
-.geometry-fallback { object-fit: contain; }
-.viewer-status { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 76px); padding: 5px 7px; border-radius: 3px; color: #e8eef1; background: rgba(25, 34, 41, .82); font-size: 9px; line-height: 1.35; pointer-events: none; }
+.geometry-fallback { z-index: 1; object-fit: contain; pointer-events: none; }
+.viewer-status { position: absolute; z-index: 3; left: 8px; bottom: 8px; max-width: calc(100% - 76px); padding: 5px 7px; border-radius: 3px; color: #e8eef1; background: rgba(25, 34, 41, .82); font-size: 9px; line-height: 1.35; pointer-events: none; }
 .viewer-status:empty { display: none; }
-.reset-view { position: absolute; top: 8px; right: 8px; min-height: 27px; padding: 0 8px; border: 1px solid #81909a; border-radius: 3px; color: #eef3f5; background: rgba(25, 34, 41, .82); font-size: 9px; }
+.reset-view { position: absolute; z-index: 4; top: 8px; right: 8px; min-height: 27px; padding: 0 8px; border: 1px solid #81909a; border-radius: 3px; color: #eef3f5; background: rgba(25, 34, 41, .82); font-size: 9px; }
 .reset-view:hover { background: #2d3b45; }
 .image-switcher, .image-caption { min-height: 32px; padding: 6px 9px; color: var(--muted); font: 10px "Cascadia Mono", Consolas, monospace; }
 .image-switcher { display: flex; gap: 5px; }

@@ -129,7 +129,7 @@ async function mountGeometryViewers(attempt) {
   geometryViewers?.dispose();
   geometryViewers = null;
   try {
-    geometryModulePromise ||= import("./geometry-viewer.js?v=4");
+    geometryModulePromise ||= import("./geometry-viewer.js?v=5");
     const { createSynchronizedGeometryViewers } = await geometryModulePromise;
     if (generation !== geometryLoadGeneration) return;
     geometryViewers = createSynchronizedGeometryViewers({

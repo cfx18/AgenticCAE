@@ -188,7 +188,7 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=4"' in html
+    assert 'src="app.js?v=5"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
     assert "OrbitControls" in viewer
@@ -198,7 +198,10 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert 'type="importmap"' not in html
     assert 'max-height: 100%' in styles
     assert 'cursor: grab' in styles
-    assert 'import("./geometry-viewer.js?v=4")' in script
+    assert 'pointer-events: auto' in styles
+    assert 'import("./geometry-viewer.js?v=5")' in script
+    assert 'viewport.render()' in viewer
+    assert 'viewport.resize()' not in viewer
 
 
 def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatch) -> None:
