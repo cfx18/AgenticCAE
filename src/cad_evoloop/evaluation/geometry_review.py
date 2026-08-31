@@ -81,6 +81,9 @@ def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
         Path(__file__).resolve(),
         Path(__file__).with_name("human_review.py").resolve(),
         (Path(__file__).parent / "schemas/human-geometry-review.schema.json").resolve(),
+        (Path(__file__).parent / "schemas/geometry-agent-decision.schema.json").resolve(),
+        (implementation_root / "evals/geometry-benchmarks/agent-loop-v2.json").resolve(),
+        (implementation_root / "evals/geometry-benchmarks/prompts/adjudicate.md").resolve(),
     ]
 
     def snapshot(source: Path, destination: Path) -> dict[str, Any]:
@@ -117,7 +120,7 @@ def _find_source_manifest(workspace: Path, expected_sha256: str) -> Path | None:
     return None
 
 
-def _public_events(path: Path) -> list[dict[str, Any]]:
+def _public_events(path: Path, phase: str) -> list[dict[str, Any]]:
     events = []
     for value in _read_jsonl(path):
         if value.get("type") != "item.completed":
@@ -128,6 +131,7 @@ def _public_events(path: Path) -> list[dict[str, Any]]:
         event = {
             "type": item.get("type"),
             "status": item.get("status", "completed"),
+            "phase": phase,
         }
         if item.get("type") == "agent_message":
             event["text"] = item.get("text", "")
@@ -314,7 +318,10 @@ def generate_geometry_review_bundle(
             attempt_dir = job_dir / "attempts" / attempt_id
             verdict_path = attempt_dir / "geometry-verdict.json"
             reflection_path = attempt_dir / "reflection.json"
+            feedback_path = attempt_dir / "feedback-packet.json"
             events_path = attempt_dir / "codex-events.jsonl"
+            reflection_events_path = attempt_dir / "reflection-events.jsonl"
+            reflection_stderr_path = attempt_dir / "reflection-stderr.log"
             audit_path = attempt_dir / "mcp-audit.jsonl"
             candidate_path = attempt_dir / "candidate.stl"
             parse_errors = []
@@ -328,6 +335,11 @@ def generate_geometry_review_bundle(
             except (json.JSONDecodeError, UnicodeError) as exc:
                 reflection = None
                 parse_errors.append({"artifact": "reflection.json", "error": str(exc)})
+            try:
+                feedback_packet = _read_json(feedback_path)
+            except (json.JSONDecodeError, UnicodeError) as exc:
+                feedback_packet = None
+                parse_errors.append({"artifact": "feedback-packet.json", "error": str(exc)})
             candidate_render = assets / asset_root / f"{attempt_id}-candidate.png"
             overlay_render = assets / asset_root / f"{attempt_id}-overlay.png"
             render_error = None
@@ -343,7 +355,10 @@ def generate_geometry_review_bundle(
                 "candidate": _file_evidence(candidate_path),
                 "verdict": _file_evidence(verdict_path),
                 "reflection": _file_evidence(reflection_path),
+                "feedback_packet": _file_evidence(feedback_path),
                 "codex_events": _file_evidence(events_path),
+                "reflection_events": _file_evidence(reflection_events_path),
+                "reflection_stderr": _file_evidence(reflection_stderr_path),
                 "mcp_audit": _file_evidence(audit_path),
                 "render_images": {
                     "candidate": _file_evidence(candidate_render),
@@ -354,12 +369,20 @@ def generate_geometry_review_bundle(
             attempts.append({
                 **{key: attempt_result.get(key) for key in (
                     "attempt_id", "attempt_number", "elapsed_seconds", "return_code",
-                    "timed_out", "score", "passed", "thread_id", "usage", "errors",
+                    "timed_out", "action_timed_out", "decision_timed_out",
+                    "decision_return_code", "score", "passed", "thread_id", "usage",
+                    "action_usage", "reflection_usage", "errors", "agent_decision",
+                    "decision_reason", "can_improve", "stagnation_advisory",
+                    "safety_stop_reason",
                 )},
                 "selected": attempt_id == result.get("selected_attempt_id"),
                 "verdict": verdict,
                 "reflection": reflection,
-                "public_events": _public_events(events_path),
+                "feedback_packet": feedback_packet,
+                "public_events": [
+                    *_public_events(events_path, "action"),
+                    *_public_events(reflection_events_path, "feedback"),
+                ],
                 "mcp_events": _mcp_events(audit_path),
                 "evidence": evidence,
                 "evidence_sha256": _canonical_sha256(evidence),
@@ -391,6 +414,8 @@ def generate_geometry_review_bundle(
             "score": result.get("score"),
             "passed": result.get("passed"),
             "selected_attempt_id": result.get("selected_attempt_id"),
+            "stop_reason": result.get("stop_reason"),
+            "agent_requested_continue": result.get("agent_requested_continue"),
             "selected_evidence_sha256": selected_attempt.get("evidence_sha256") if selected_attempt else None,
             "candidate_sha256": result.get("candidate_sha256"),
             "ground_truth_sha256": result.get("ground_truth_sha256"),
@@ -406,6 +431,7 @@ def generate_geometry_review_bundle(
         "declared_manifest_sha256": manifest.get("manifest_sha256"),
         "source_manifest_sha256": expected_source,
         "protocol": manifest.get("protocol"),
+        "agent_loop_protocol": manifest.get("agent_loop_protocol"),
         "benchmark_split": manifest.get("benchmark_split"),
         "execution": manifest.get("execution"),
     }

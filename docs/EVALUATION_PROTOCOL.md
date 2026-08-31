@@ -30,6 +30,28 @@ instead of silently mixing conditions.
 The current 40/10 split is a development and pilot split. It is not the final
 paper test set.
 
+## Closed Agent Loop
+
+Geometry campaigns use `evocad-agent-loop-v2`. One logical iteration consists
+of a CAD action, deterministic verification of that exact candidate, and a
+same-thread agent adjudication. The adjudication records failure ownership,
+observed evidence, root causes, whether the current structure can improve, a
+concrete next-action plan, and `continue` or `stop`. Only `continue` schedules a
+new CAD action. The next action starts from the best scorable checkpoint while
+also receiving the latest verdict, so a broken Boolean or empty-solid
+regression does not replace a valid earlier result.
+
+`max_iterations` is an external safety ceiling, not an agent reasoning budget.
+The agent still receives and adjudicates the verifier result at the ceiling;
+the ledger records both its requested decision and the harness safety stop.
+Strict pass, job time exhaustion, missing adjudication, and the safety ceiling
+are hard stops. Consecutive non-improvement is advisory only.
+
+The same adjudication may attribute a defect to the prompt, skill, MCP,
+verifier, harness, or task and record a system-change proposal. Fixed campaigns
+do not mutate shared components mid-run; those proposals enter the versioned
+outer improvement workflow and require separate validation before adoption.
+
 ## Primary Metric
 
 Evidence-Qualified Completion (EQC) is computed from check-level evidence:

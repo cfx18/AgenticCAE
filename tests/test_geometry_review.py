@@ -49,6 +49,9 @@ def _campaign(tmp_path: Path) -> tuple[Path, Path, Path]:
     (attempt / "codex-events.jsonl").write_text(json.dumps({
         "type": "item.completed", "item": {"type": "agent_message", "text": "I will repair it."},
     }) + "\n", encoding="utf-8")
+    (attempt / "reflection-events.jsonl").write_text(json.dumps({
+        "type": "item.completed", "item": {"type": "agent_message", "text": "Continue."},
+    }) + "\n", encoding="utf-8")
     (attempt / "mcp-audit.jsonl").write_text(json.dumps({
         "event_id": "e1", "tool": "autocad_core_start", "status": "fail",
         "duration_ms": 4.2, "arguments": {"timeout": 120000},
@@ -67,6 +70,8 @@ def _campaign(tmp_path: Path) -> tuple[Path, Path, Path]:
         "attempts": [{
             "attempt_id": "a001", "attempt_number": 1, "score": 82, "passed": False,
             "elapsed_seconds": 12.5, "return_code": 0, "timed_out": False,
+            "agent_decision": "continue", "decision_reason": "A concrete repair remains.",
+            "can_improve": True, "safety_stop_reason": "max_iterations",
         }],
     }
     (campaign / "results.json").write_text(json.dumps([result]), encoding="utf-8")
@@ -111,6 +116,9 @@ def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None
     assert len(run["input_evidence"][0]["sha256"]) == 64
     assert run["attempts"][0]["reflection"]["failure_owner"] == "drawing"
     assert run["attempts"][0]["public_events"][0]["text"] == "I will repair it."
+    assert run["attempts"][0]["public_events"][1]["phase"] == "feedback"
+    assert run["attempts"][0]["agent_decision"] == "continue"
+    assert run["attempts"][0]["safety_stop_reason"] == "max_iterations"
     assert run["attempts"][0]["mcp_events"][0]["status"] == "fail"
     assert len(run["attempts"][0]["evidence_sha256"]) == 64
     assert (output / "review-data.json").is_file()
@@ -171,7 +179,10 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     root = Path(__file__).parents[1] / "apps/geometry-review"
     html = (root / "index.html").read_text(encoding="utf-8")
     script = (root / "app.js").read_text(encoding="utf-8")
-    for identifier in ("evidencePanel", "verifierPanel", "reflectionPanel", "mcpPanel", "reviewForm"):
+    for identifier in (
+        "evidencePanel", "verifierPanel", "reflectionPanel", "feedbackPacket", "mcpPanel",
+        "reviewForm",
+    ):
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script

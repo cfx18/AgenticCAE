@@ -70,8 +70,15 @@ cad-evoloop geometry-score .local/datasets/evocad/runs/candidate.stl ground_trut
 
 Run a trajectory-recorded Codex/AutoCAD campaign. Ground-truth paths are not
 staged into the agent directory; repair turns receive sanitized numerical
-feedback. Attempts stop on strict passage, two consecutive non-improvements,
-or the time budget, with five attempts only as a safety ceiling.
+feedback. Each logical iteration is closed before another CAD action starts:
+the agent edits, the harness verifies that exact candidate, and the same Codex
+thread receives the verdict and records a structured `continue` or `stop`
+decision. A `continue` decision must name a concrete geometry or recovery
+change. Non-improvement is advisory evidence for that decision, not an
+automatic stop. Strict passage, the job time budget, an unavailable decision,
+and `--max-iterations` are external safety stops. The default safety ceiling is
+12; the final iteration still receives feedback, so the record distinguishes
+an agent stop from an agent that wanted to continue but was safety-limited.
 
 ```powershell
 cad-evoloop geometry-batch `
@@ -79,6 +86,7 @@ cad-evoloop geometry-batch `
   --split-file evals/geometry-benchmarks/splits/geometry-50-split-v1.json `
   --split-name cost_pilot `
   --campaign geometry-cost-pilot-v2 `
+  --max-iterations 12 `
   --model gpt-5.6-sol --model gpt-5.6-terra --model gpt-5.6-luna
 
 cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-cost-pilot-v2 `

@@ -193,7 +193,10 @@ def _batch_geometry() -> None:
         "--reasoning-effort", default="medium",
         choices=("low", "medium", "high", "xhigh", "max"),
     )
-    parser.add_argument("--max-attempts", type=int, default=5)
+    parser.add_argument(
+        "--max-iterations", "--max-attempts", dest="max_iterations", type=int, default=12,
+        help="safety ceiling; every iteration still ends with an agent feedback decision",
+    )
     parser.add_argument("--stagnation-limit", type=int, default=2)
     parser.add_argument("--job-time-budget", type=int, default=3600)
     parser.add_argument("--timeout", type=int, default=1800)
@@ -212,7 +215,7 @@ def _batch_geometry() -> None:
         models=args.models,
         sample_ids=set(args.samples) if args.samples else None,
         effort=args.reasoning_effort,
-        max_attempts=args.max_attempts,
+        max_iterations=args.max_iterations,
         stagnation_limit=args.stagnation_limit,
         job_time_budget=args.job_time_budget,
         timeout=args.timeout,

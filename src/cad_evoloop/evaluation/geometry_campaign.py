@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from cad_evoloop.ledger import RunLedger
-from cad_evoloop.ledger.ledger import sha256_file
+from cad_evoloop.ledger.ledger import redact, sha256_file
 from cad_evoloop.paths import project_root
 from cad_evoloop.verification.export_core_console import export_dwg_core
 
@@ -27,6 +27,7 @@ from .geometry_score import (
 
 DEFAULT_MODEL = "gpt-5.6-sol"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+AGENT_LOOP_PROTOCOL_ID = "evocad-agent-loop-v2"
 
 
 def slug(value: str) -> str:
@@ -174,6 +175,9 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "src/cad_evoloop/verification/export_core_console.py",
         workspace / "evals/geometry-benchmarks/prompts/modeling.md",
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
+        workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
+        workspace / "evals/geometry-benchmarks/agent-loop-v2.json",
+        workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
     ]
 
@@ -220,7 +224,6 @@ def codex_command(
     command = [
         executable,
         "exec",
-        "--ephemeral",
         "--skip-git-repo-check",
         "--ignore-user-config",
         "--ignore-rules",
@@ -247,6 +250,59 @@ def codex_command(
     return command
 
 
+def codex_resume_command(
+    executable: str,
+    model: str,
+    effort: str,
+    job_dir: Path,
+    thread_id: str,
+    prompt: str,
+    final_path: Path,
+    *,
+    with_autocad: bool,
+    audit_path: Path | None = None,
+    output_schema: Path | None = None,
+) -> list[str]:
+    """Resume the same agent trajectory for an action or feedback decision turn."""
+    workspace = project_root()
+    command = [
+        executable,
+        "exec",
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--approve-for-me",
+        "--model", model,
+        "--cd", str(job_dir),
+        "-c", f'model_reasoning_effort="{effort}"',
+    ]
+    if with_autocad:
+        if audit_path is None:
+            raise ValueError("audit_path is required when resuming with AutoCAD")
+        audited = workspace / "src/cad_evoloop/backends/autocad/audited.py"
+        base_server = workspace / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"
+        command.extend([
+            "-c", 'mcp_servers.autocad.command="python"',
+            "-c", f'mcp_servers.autocad.args=["{audited.as_posix()}"]',
+            "-c", (
+                "mcp_servers.autocad.env={"
+                f'AUTOCAD_MCP_WORKSPACE="{workspace.as_posix()}",'
+                f'AUTOCAD_MCP_AUDIT_PATH="{audit_path.as_posix()}",'
+                f'AUTOCAD_MCP_BASE_SERVER="{base_server.as_posix()}"'
+                "}"
+            ),
+            "-c", "mcp_servers.autocad.startup_timeout_sec=20",
+            "-c", "mcp_servers.autocad.tool_timeout_sec=60",
+        ])
+    if output_schema is not None:
+        command.extend(["--output-schema", str(output_schema)])
+    command.extend([
+        "--json", "--output-last-message", str(final_path),
+        "resume", thread_id, prompt,
+    ])
+    return command
+
+
 def _read_codex_events(path: Path) -> dict[str, Any]:
     thread_id = None
     usage: dict[str, Any] = {}
@@ -266,30 +322,177 @@ def _read_codex_events(path: Path) -> dict[str, Any]:
     return {"thread_id": thread_id, "usage": usage, "errors": errors}
 
 
-def should_stop_repairs(
+def safety_stop_reason(
     *,
     passed: bool,
-    timed_out: bool,
-    return_code: int | None,
-    has_candidate: bool,
-    non_improving_attempts: int,
-    stagnation_limit: int,
+    iteration: int,
+    max_iterations: int,
     elapsed_seconds: float,
     job_time_budget: int,
-) -> bool:
-    return (
-        passed
-        or timed_out
-        or return_code not in (None, 0)
-        or not has_candidate
-        or non_improving_attempts >= stagnation_limit
-        or elapsed_seconds >= job_time_budget
+) -> str | None:
+    if passed:
+        return "strict_pass"
+    if elapsed_seconds >= job_time_budget:
+        return "job_time_budget"
+    if iteration >= max_iterations:
+        return "max_iterations"
+    return None
+
+
+def _merge_usage(*values: dict[str, Any]) -> dict[str, int]:
+    keys = {
+        "input_tokens", "cached_input_tokens", "cache_write_input_tokens",
+        "output_tokens", "reasoning_output_tokens",
+    }
+    return {key: sum(int(value.get(key, 0) or 0) for value in values) for key in keys}
+
+
+def _decision_prompt(
+    template_path: Path,
+    *,
+    sample_id: str,
+    attempt_id: str,
+    verdict: dict[str, Any],
+    iteration: int,
+    current_score: float,
+    best_score: float,
+    non_improving: int,
+    elapsed_seconds: float,
+    remaining_seconds: float,
+    candidate_exists: bool,
+    mesh_exists: bool,
+    action_timed_out: bool,
+    action_return_code: int | None,
+    diagnostics: dict[str, Any],
+) -> str:
+    return Template(template_path.read_text(encoding="utf-8")).substitute(
+        sample_id=sample_id,
+        attempt_id=attempt_id,
+        verdict_json=json.dumps(verdict, indent=2, ensure_ascii=False),
+        iteration=iteration,
+        current_score=current_score,
+        best_score=max(0.0, best_score),
+        non_improving=non_improving,
+        elapsed_seconds=round(elapsed_seconds, 1),
+        remaining_seconds=round(max(0.0, remaining_seconds), 1),
+        candidate_exists=str(candidate_exists).lower(),
+        mesh_exists=str(mesh_exists).lower(),
+        action_timed_out=str(action_timed_out).lower(),
+        action_return_code=action_return_code,
+        diagnostics_json=json.dumps(diagnostics, indent=2, ensure_ascii=False),
     )
+
+
+def _feedback_diagnostics(
+    action_event_data: dict[str, Any],
+    audit_path: Path,
+    stderr_path: Path,
+) -> dict[str, Any]:
+    """Expose bounded current-turn failures without forwarding evaluator-only data."""
+    mcp_calls = []
+    if audit_path.is_file():
+        for line in audit_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            row: dict[str, Any] = {
+                "tool": event.get("tool"),
+                "transport_status": event.get("status"),
+                "duration_ms": event.get("duration_ms"),
+            }
+            if event.get("error"):
+                row["transport_error"] = redact(event["error"])
+            content = (event.get("response") or {}).get("result", {}).get("content", [])
+            if event.get("tool") == "autocad_core_status" and content:
+                try:
+                    payload = json.loads(content[0].get("text", ""))
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    payload = None
+                if isinstance(payload, dict):
+                    row["backend_result"] = redact({
+                        key: payload.get(key)
+                        for key in (
+                            "job_id", "status", "return_code", "error", "diagnostic",
+                            "duration_seconds",
+                        )
+                    })
+            mcp_calls.append(row)
+    stderr_tail = []
+    if stderr_path.is_file():
+        stderr_tail = [
+            line for line in stderr_path.read_text(
+                encoding="utf-8", errors="replace",
+            ).splitlines()[-30:] if line.strip()
+        ]
+    return {
+        "codex_errors": redact(action_event_data.get("errors") or []),
+        "mcp_calls": mcp_calls,
+        "stderr_tail": stderr_tail,
+    }
+
+
+def _validate_agent_decision(value: dict[str, Any]) -> None:
+    decision = value.get("decision")
+    can_improve = value.get("can_improve")
+    if decision not in {"continue", "stop"}:
+        raise ValueError("decision must be continue or stop")
+    if decision == "continue":
+        if can_improve is not True:
+            raise ValueError("continue requires can_improve=true")
+        if not value.get("planned_geometry_changes"):
+            raise ValueError("continue requires at least one planned geometry or recovery action")
+        expected_gain = value.get("expected_score_gain")
+        if (
+            isinstance(expected_gain, bool)
+            or not isinstance(expected_gain, (int, float))
+            or expected_gain <= 0
+        ):
+            raise ValueError("continue requires a positive expected_score_gain")
+    elif can_improve is not False:
+        raise ValueError("stop requires can_improve=false")
 
 
 def remaining_attempt_timeout(configured_timeout: int, remaining_budget: float) -> int:
     """Bound a Codex turn by both its configured timeout and the job budget."""
     return max(1, min(configured_timeout, int(max(1.0, remaining_budget))))
+
+
+def _run_codex_process(
+    command: list[str],
+    *,
+    cwd: Path,
+    events_path: Path,
+    stderr_path: Path,
+    timeout: int,
+) -> tuple[int | None, bool]:
+    return_code = None
+    timed_out = False
+    try:
+        with events_path.open("w", encoding="utf-8", newline="\n") as stdout, stderr_path.open(
+            "w", encoding="utf-8", newline="\n",
+        ) as stderr:
+            completed = subprocess.run(
+                command,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+        return_code = completed.returncode
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        stderr_path.write_text(
+            stderr_path.read_text(encoding="utf-8", errors="replace")
+            + f"\nTimed out after {timeout} seconds\n",
+            encoding="utf-8",
+        )
+    return return_code, timed_out
 
 
 def run_geometry_job(
@@ -301,7 +504,7 @@ def run_geometry_job(
     effort: str,
     executable: str,
     timeout: int,
-    max_attempts: int,
+    max_iterations: int,
     stagnation_limit: int,
     job_time_budget: int,
     score_samples: int,
@@ -352,10 +555,14 @@ def run_geometry_job(
     previous_candidate = None
     previous_verdict = None
     latest_verdict = None
+    latest_candidate = None
+    previous_reflection = None
+    thread_id = None
+    stop_reason = None
     non_improving_attempts = 0
     job_started = time.perf_counter()
 
-    for number in range(1, max_attempts + 1):
+    for number in range(1, max_iterations + 1):
         attempt_id = ledger.add_attempt(
             run_dir,
             label="fresh-modeling" if number == 1 else "geometry-guided-repair",
@@ -370,62 +577,57 @@ def run_geometry_job(
         candidate_stl = attempt_dir / "candidate.stl"
         verdict_path = attempt_dir / "geometry-verdict.json"
         reflection_path = attempt_dir / "reflection.json"
+        feedback_path = attempt_dir / "feedback-packet.json"
         events_path = attempt_dir / "codex-events.jsonl"
         stderr_path = attempt_dir / "codex-stderr.log"
         final_path = attempt_dir / "codex-final.txt"
         audit_path = attempt_dir / "mcp-audit.jsonl"
+        reflection_events_path = attempt_dir / "reflection-events.jsonl"
+        reflection_stderr_path = attempt_dir / "reflection-stderr.log"
         prompt = _prompt(
-            prompt_root / ("modeling.md" if number == 1 else "repair.md"),
+            prompt_root / (
+                "modeling.md"
+                if number == 1 or (previous_candidate is None and latest_candidate is None)
+                else "repair.md"
+            ),
             sample_id=sample["sample_id"],
             run_id=run_id,
             attempt_id=attempt_id,
             candidate=candidate,
-            previous_candidate=previous_candidate,
+            previous_candidate=previous_candidate or latest_candidate,
             verdict=previous_verdict,
             latest_verdict=latest_verdict,
-            reflection=reflection_path,
+            reflection=previous_reflection,
         )
-        command = codex_command(
-            executable, model, effort, job_dir, images, prompt, audit_path, final_path,
-        )
+        if thread_id is None:
+            command = codex_command(
+                executable, model, effort, job_dir, images, prompt, audit_path, final_path,
+            )
+        else:
+            command = codex_resume_command(
+                executable, model, effort, job_dir, thread_id, prompt,
+                final_path, with_autocad=True, audit_path=audit_path,
+            )
+        feedback_reserve = min(180, max(30, timeout // 4))
         attempt_timeout = remaining_attempt_timeout(
             timeout,
-            job_time_budget - (time.perf_counter() - job_started),
+            job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
         )
         started = time.perf_counter()
-        timed_out = False
-        return_code = None
-        try:
-            with events_path.open("w", encoding="utf-8", newline="\n") as stdout, stderr_path.open(
-                "w", encoding="utf-8", newline="\n",
-            ) as stderr:
-                completed = subprocess.run(
-                    command,
-                    cwd=job_dir,
-                    stdin=subprocess.DEVNULL,
-                    stdout=stdout,
-                    stderr=stderr,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=attempt_timeout,
-                    check=False,
-                )
-            return_code = completed.returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            stderr_path.write_text(
-                stderr_path.read_text(encoding="utf-8", errors="replace")
-                + f"\nTimed out after {attempt_timeout} seconds\n",
-                encoding="utf-8",
-            )
-        event_data = _read_codex_events(events_path)
+        return_code, action_timed_out = _run_codex_process(
+            command,
+            cwd=job_dir,
+            events_path=events_path,
+            stderr_path=stderr_path,
+            timeout=attempt_timeout,
+        )
+        action_event_data = _read_codex_events(events_path)
+        thread_id = thread_id or action_event_data.get("thread_id")
         for path, role in (
             (events_path, "codex-events"),
             (stderr_path, "codex-stderr"),
             (final_path, "codex-final"),
             (audit_path, "mcp-audit"),
-            (reflection_path, "reflection"),
         ):
             if path.is_file():
                 ledger.add_artifact(run_dir, attempt_id, path, role=role)
@@ -456,52 +658,165 @@ def run_geometry_job(
         verdict_path.write_text(
             json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
         )
-        result = ledger.finish(run_dir, attempt_id, verdict_path)
         score = float(verdict["score"])
-        attempt = {
-            "attempt_id": attempt_id,
-            "attempt_number": number,
-            "elapsed_seconds": round(time.perf_counter() - started, 3),
-            "return_code": return_code,
-            "timed_out": timed_out,
-            "score": score,
-            "passed": verdict["passed"],
-            "verdict": str(verdict_path),
-            **event_data,
-        }
-        attempts.append(attempt)
-        improved = candidate.is_file() and score > best_score
+        scorable = candidate_stl.is_file() and float(verdict.get("coverage", 0)) > 0
+        improved = scorable and score > best_score
         if improved:
             best_score = score
             best_attempt_id = attempt_id
             best_candidate = candidate
             best_verdict = verdict_path
             shutil.copy2(candidate, job_dir / "candidate.dwg")
-            if candidate_stl.is_file():
-                shutil.copy2(candidate_stl, job_dir / "candidate.stl")
+            shutil.copy2(candidate_stl, job_dir / "candidate.stl")
             shutil.copy2(verdict_path, job_dir / "geometry-verdict.json")
             non_improving_attempts = 0
         else:
             non_improving_attempts += 1
+
+        decision = None
+        decision_error = None
+        decision_return_code = None
+        decision_timed_out = False
+        decision_event_data: dict[str, Any] = {"usage": {}, "errors": []}
+        if thread_id:
+            elapsed_before_decision = time.perf_counter() - job_started
+            diagnostics = _feedback_diagnostics(action_event_data, audit_path, stderr_path)
+            feedback_packet = {
+                "schema_version": "1.0",
+                "sample_id": sample["sample_id"],
+                "attempt_id": attempt_id,
+                "verdict": verdict,
+                "trajectory_state": {
+                    "iteration": number,
+                    "current_score": score,
+                    "best_score": max(0.0, best_score),
+                    "consecutive_non_improving_iterations": non_improving_attempts,
+                    "elapsed_seconds": round(elapsed_before_decision, 1),
+                    "remaining_seconds": round(max(0.0, job_time_budget - elapsed_before_decision), 1),
+                    "candidate_exists": candidate.is_file(),
+                    "mesh_exists": candidate_stl.is_file(),
+                    "action_timed_out": action_timed_out,
+                    "action_return_code": return_code,
+                },
+                "diagnostics": diagnostics,
+            }
+            feedback_path.write_text(
+                json.dumps(feedback_packet, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            decision_prompt = _decision_prompt(
+                prompt_root / "adjudicate.md",
+                sample_id=sample["sample_id"],
+                attempt_id=attempt_id,
+                verdict=verdict,
+                iteration=number,
+                current_score=score,
+                best_score=best_score,
+                non_improving=non_improving_attempts,
+                elapsed_seconds=elapsed_before_decision,
+                remaining_seconds=job_time_budget - elapsed_before_decision,
+                candidate_exists=candidate.is_file(),
+                mesh_exists=candidate_stl.is_file(),
+                action_timed_out=action_timed_out,
+                action_return_code=return_code,
+                diagnostics=diagnostics,
+            )
+            decision_command = codex_resume_command(
+                executable, model, effort, job_dir, thread_id, decision_prompt,
+                reflection_path,
+                with_autocad=False,
+                output_schema=(
+                    workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json"
+                ),
+            )
+            decision_timeout = remaining_attempt_timeout(
+                min(timeout, feedback_reserve),
+                job_time_budget - elapsed_before_decision,
+            )
+            decision_return_code, decision_timed_out = _run_codex_process(
+                decision_command,
+                cwd=job_dir,
+                events_path=reflection_events_path,
+                stderr_path=reflection_stderr_path,
+                timeout=decision_timeout,
+            )
+            decision_event_data = _read_codex_events(reflection_events_path)
+            try:
+                decision = json.loads(reflection_path.read_text(encoding="utf-8"))
+                _validate_agent_decision(decision)
+            except Exception as exc:
+                decision = None
+                decision_error = repr(exc)
+        else:
+            decision_error = "The action turn did not produce a resumable Codex thread_id"
+
+        for path, role in (
+            (reflection_path, "reflection"),
+            (feedback_path, "feedback-packet"),
+            (reflection_events_path, "reflection-events"),
+            (reflection_stderr_path, "reflection-stderr"),
+        ):
+            if path.is_file():
+                ledger.add_artifact(run_dir, attempt_id, path, role=role)
+        result = ledger.finish(run_dir, attempt_id, verdict_path)
+        elapsed = time.perf_counter() - job_started
+        safety_reason = safety_stop_reason(
+            passed=bool(verdict["passed"]),
+            iteration=number,
+            max_iterations=max_iterations,
+            elapsed_seconds=elapsed,
+            job_time_budget=job_time_budget,
+        )
+        if decision is None:
+            safety_reason = safety_reason or "decision_unavailable"
+        attempt = {
+            "attempt_id": attempt_id,
+            "attempt_number": number,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "return_code": return_code,
+            "timed_out": action_timed_out or decision_timed_out,
+            "action_timed_out": action_timed_out,
+            "decision_timed_out": decision_timed_out,
+            "decision_return_code": decision_return_code,
+            "score": score,
+            "passed": verdict["passed"],
+            "verdict": str(verdict_path),
+            "thread_id": thread_id,
+            "usage": _merge_usage(
+                action_event_data.get("usage") or {},
+                decision_event_data.get("usage") or {},
+            ),
+            "action_usage": action_event_data.get("usage") or {},
+            "reflection_usage": decision_event_data.get("usage") or {},
+            "errors": [
+                *(action_event_data.get("errors") or []),
+                *(decision_event_data.get("errors") or []),
+                *([decision_error] if decision_error else []),
+            ],
+            "agent_decision": decision.get("decision") if decision else None,
+            "decision_reason": decision.get("decision_reason") if decision else None,
+            "can_improve": decision.get("can_improve") if decision else None,
+            "stagnation_advisory": non_improving_attempts >= stagnation_limit,
+            "safety_stop_reason": safety_reason,
+        }
+        attempts.append(attempt)
         previous_candidate = best_candidate
         previous_verdict = best_verdict
         latest_verdict = verdict_path
-        if should_stop_repairs(
-            passed=verdict["passed"],
-            timed_out=timed_out,
-            return_code=return_code,
-            has_candidate=previous_candidate is not None,
-            non_improving_attempts=non_improving_attempts,
-            stagnation_limit=stagnation_limit,
-            elapsed_seconds=time.perf_counter() - job_started,
-            job_time_budget=job_time_budget,
-        ):
+        latest_candidate = candidate if candidate.is_file() else latest_candidate
+        previous_reflection = reflection_path if reflection_path.is_file() else previous_reflection
+        if safety_reason:
+            stop_reason = safety_reason
+            break
+        if decision and decision["decision"] == "stop":
+            stop_reason = "agent_stop"
             break
 
     selected = ledger.select_attempt(run_dir, best_attempt_id) if best_attempt_id else result
     final = {
         "schema_version": "1.0",
         "protocol": PROTOCOL_ID,
+        "agent_loop_protocol": AGENT_LOOP_PROTOCOL_ID,
         "campaign": campaign,
         "sample_id": sample["sample_id"],
         "ledger_sample_id": ledger_sample_id,
@@ -512,6 +827,10 @@ def run_geometry_job(
         "score": best_score if best_attempt_id else 0.0,
         "passed": selected["status"] == "passed",
         "selected_attempt_id": best_attempt_id,
+        "stop_reason": stop_reason or "loop_exhausted",
+        "agent_requested_continue": bool(
+            attempts and attempts[-1].get("agent_decision") == "continue"
+        ),
         "attempts": attempts,
         "candidate_sha256": sha256_file(job_dir / "candidate.dwg") if best_candidate else None,
         "ground_truth_sha256": sha256_file(ground_truth),
@@ -531,7 +850,7 @@ def build_geometry_campaign_manifest(
     campaign: str,
     models: list[str],
     effort: str,
-    max_attempts: int,
+    max_iterations: int,
     stagnation_limit: int,
     job_time_budget: int,
     score_samples: int,
@@ -550,12 +869,16 @@ def build_geometry_campaign_manifest(
     payload = {
         "schema_version": "1.0",
         "protocol": PROTOCOL_ID,
+        "agent_loop_protocol": AGENT_LOOP_PROTOCOL_ID,
         "campaign_id": campaign,
         "source_manifest_sha256": sha256_file(manifest_path),
         "models": [{"name": model, "reasoning_effort": effort} for model in models],
         "execution": {
-            "max_attempts": max_attempts,
-            "stagnation_limit": stagnation_limit,
+            "max_iterations_safety": max_iterations,
+            "stagnation_advisory": stagnation_limit,
+            "feedback_turn_required": True,
+            "same_thread_feedback": True,
+            "agent_controls_continuation": True,
             "job_time_budget_seconds": job_time_budget,
             "surface_samples": score_samples,
             "voxel_resolution": voxel_resolution,
@@ -576,7 +899,7 @@ def run_geometry_campaign(
     models: list[str] | None = None,
     sample_ids: set[str] | None = None,
     effort: str = "medium",
-    max_attempts: int = 5,
+    max_iterations: int = 12,
     stagnation_limit: int = 2,
     job_time_budget: int = 3600,
     timeout: int = 1800,
@@ -588,8 +911,8 @@ def run_geometry_campaign(
     split_file: str | Path | None = None,
     split_name: str | None = None,
 ) -> dict[str, Any]:
-    if max_attempts < 1:
-        raise ValueError("max_attempts must be at least 1")
+    if max_iterations < 1:
+        raise ValueError("max_iterations must be at least 1")
     if stagnation_limit < 1 or job_time_budget < 1:
         raise ValueError("stagnation_limit and job_time_budget must be at least 1")
     if timeout < 1 or score_samples < 1 or voxel_resolution < 16:
@@ -648,7 +971,7 @@ def run_geometry_campaign(
         campaign,
         list(dict.fromkeys(model for _, model in jobs)),
         effort,
-        max_attempts,
+        max_iterations,
         stagnation_limit,
         job_time_budget,
         score_samples,
@@ -692,7 +1015,7 @@ def run_geometry_campaign(
             effort=effort,
             executable=executable,
             timeout=timeout,
-            max_attempts=max_attempts,
+            max_iterations=max_iterations,
             stagnation_limit=stagnation_limit,
             job_time_budget=job_time_budget,
             score_samples=score_samples,

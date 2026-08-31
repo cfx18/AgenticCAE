@@ -44,6 +44,11 @@ def geometry_report_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "score": float(attempt["score"]),
                 "passed": bool(attempt["passed"]),
                 "selected": attempt["attempt_id"] == selected,
+                "agent_decision": attempt.get("agent_decision"),
+                "can_improve": attempt.get("can_improve"),
+                "stagnation_advisory": bool(attempt.get("stagnation_advisory")),
+                "safety_stop_reason": attempt.get("safety_stop_reason"),
+                "run_stop_reason": result.get("stop_reason"),
                 "elapsed_seconds": float(attempt["elapsed_seconds"]),
                 "timed_out": bool(attempt.get("timed_out")),
                 "codex_error_events": len(attempt.get("errors", [])),
@@ -488,7 +493,9 @@ def generate_geometry_campaign_report(
     with (output_dir / "attempts.csv").open("w", newline="", encoding="utf-8") as stream:
         fieldnames = list(rows[0]) if rows else [
             "sample_id", "model", "attempt_id", "attempt_number", "score", "passed",
-            "selected", "elapsed_seconds", "timed_out", "codex_error_events", "input_tokens",
+            "selected", "agent_decision", "can_improve", "stagnation_advisory",
+            "safety_stop_reason", "run_stop_reason", "elapsed_seconds", "timed_out",
+            "codex_error_events", "input_tokens",
             "cached_input_tokens", "output_tokens", "reasoning_output_tokens",
         ]
         writer = csv.DictWriter(stream, fieldnames=fieldnames)

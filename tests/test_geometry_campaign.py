@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from cad_evoloop.evaluation import geometry_campaign
 from cad_evoloop.evaluation.geometry_split import build_geometry_split
 
@@ -30,6 +32,172 @@ def _manifest(tmp_path: Path) -> Path:
         "samples": [_sample()],
     }), encoding="utf-8")
     return manifest
+
+
+def _geometry_result(score: float) -> dict:
+    return {
+        "passed": False,
+        "quality_tier": "failed",
+        "score": score,
+        "coverage": 100.0,
+        "checks": {
+            "candidate_watertight": True,
+            "voxel_iou": False,
+            "normalized_chamfer": False,
+            "bbox_relative_error": False,
+            "volume_relative_error": False,
+        },
+        "acceptable_checks": {
+            "candidate_watertight": True,
+            "voxel_iou": False,
+            "normalized_chamfer": False,
+            "bbox_relative_error": False,
+            "volume_relative_error": False,
+        },
+        "metrics": {
+            "voxel_iou": score / 100,
+            "normalized_chamfer": 0.02,
+            "bbox_relative_error": 0.1,
+            "volume_relative_error": 0.1,
+        },
+        "mismatch": {},
+        "candidate_geometry": {"watertight": True, "extents": [10, 10, 10]},
+        "ground_truth_geometry": {"watertight": True, "extents": [10, 10, 10]},
+        "alignment": {"scale_allowed": False},
+    }
+
+
+def _run_closed_loop_job(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    decisions: list[str],
+    max_iterations: int,
+) -> dict:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = _manifest(workspace / ".local/data")
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    monkeypatch.setattr(geometry_campaign, "_source_paths", lambda _workspace: [])
+    monkeypatch.setattr(geometry_campaign, "_prompt", lambda *args, **kwargs: "action")
+    monkeypatch.setattr(geometry_campaign, "_decision_prompt", lambda *args, **kwargs: "decision")
+
+    def initial_command(_exe, _model, _effort, job_dir, _images, _prompt, _audit, final_path):
+        attempt_id = final_path.parent.name
+        return ["action", str(job_dir / f"candidate.{attempt_id}.dwg")]
+
+    def resume_command(
+        _exe, _model, _effort, job_dir, _thread, _prompt, final_path,
+        *, with_autocad, **_kwargs,
+    ):
+        if with_autocad:
+            attempt_id = final_path.parent.name
+            return ["action", str(job_dir / f"candidate.{attempt_id}.dwg")]
+        return ["decision", str(final_path)]
+
+    pending = list(decisions)
+
+    def run_process(command, *, events_path, stderr_path, **_kwargs):
+        events_path.write_text(
+            json.dumps({"type": "thread.started", "thread_id": "thread-1"}) + "\n"
+            + json.dumps({
+                "type": "turn.completed",
+                "usage": {"input_tokens": 10, "output_tokens": 2},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        stderr_path.write_text("", encoding="utf-8")
+        if command[0] == "action":
+            Path(command[1]).write_bytes(b"dwg")
+        else:
+            choice = pending.pop(0)
+            Path(command[1]).write_text(json.dumps({
+                "schema_version": "1.0",
+                "failure_owner": "drawing",
+                "observed_failures": ["Mismatch remains"],
+                "root_causes": ["Feature is incomplete"],
+                "structure_assessment": "The current structure can still be improved.",
+                "can_improve": choice == "continue",
+                "decision": choice,
+                "decision_reason": f"Agent chose {choice} after reading this iteration verdict.",
+                "planned_geometry_changes": ["Repair the missing feature"] if choice == "continue" else [],
+                "system_change_proposal": None,
+                "expected_score_gain": 10 if choice == "continue" else None,
+                "confidence": 0.8,
+            }), encoding="utf-8")
+        return 0, False
+
+    score_values = iter(40.0 + 10.0 * index for index in range(max_iterations))
+
+    def export_candidate(_candidate, output, timeout=None):
+        Path(output).write_bytes(b"stl")
+        return Path(output)
+
+    monkeypatch.setattr(geometry_campaign, "codex_command", initial_command)
+    monkeypatch.setattr(geometry_campaign, "codex_resume_command", resume_command)
+    monkeypatch.setattr(geometry_campaign, "_run_codex_process", run_process)
+    monkeypatch.setattr(geometry_campaign, "export_dwg_core", export_candidate)
+    monkeypatch.setattr(
+        geometry_campaign,
+        "score_geometry_files",
+        lambda *_args, **_kwargs: _geometry_result(next(score_values)),
+    )
+    return geometry_campaign.run_geometry_job(
+        manifest_path=manifest,
+        sample=_sample(),
+        campaign="closed-loop",
+        model="test-model",
+        effort="medium",
+        executable="codex",
+        timeout=300,
+        max_iterations=max_iterations,
+        stagnation_limit=2,
+        job_time_budget=3600,
+        score_samples=100,
+        voxel_resolution=16,
+    )
+
+
+def test_agent_feedback_decision_controls_the_next_iteration(tmp_path, monkeypatch) -> None:
+    result = _run_closed_loop_job(
+        tmp_path,
+        monkeypatch,
+        decisions=["continue", "stop"],
+        max_iterations=5,
+    )
+
+    assert len(result["attempts"]) == 2
+    assert [attempt["agent_decision"] for attempt in result["attempts"]] == [
+        "continue", "stop",
+    ]
+    assert result["stop_reason"] == "agent_stop"
+    assert result["agent_requested_continue"] is False
+    assert {attempt["thread_id"] for attempt in result["attempts"]} == {"thread-1"}
+    assert result["attempts"][0]["usage"]["input_tokens"] == 20
+    assert result["attempts"][0]["usage"]["output_tokens"] == 4
+    job_dir = Path(result["job_dir"])
+    assert (job_dir / "attempts/a001/reflection.json").is_file()
+    feedback = json.loads((job_dir / "attempts/a001/feedback-packet.json").read_text())
+    assert feedback["verdict"]["score"] == 40.0
+    assert feedback["trajectory_state"]["iteration"] == 1
+    assert (job_dir / "attempts/a002/reflection-events.jsonl").is_file()
+
+
+def test_max_iterations_is_a_safety_stop_after_agent_feedback(tmp_path, monkeypatch) -> None:
+    result = _run_closed_loop_job(
+        tmp_path,
+        monkeypatch,
+        decisions=["continue", "continue"],
+        max_iterations=2,
+    )
+
+    assert len(result["attempts"]) == 2
+    final_attempt = result["attempts"][-1]
+    assert final_attempt["agent_decision"] == "continue"
+    assert final_attempt["can_improve"] is True
+    assert final_attempt["safety_stop_reason"] == "max_iterations"
+    assert result["stop_reason"] == "max_iterations"
+    assert result["agent_requested_continue"] is True
 
 
 def test_stage_agent_inputs_excludes_ground_truth(tmp_path) -> None:
@@ -110,6 +278,9 @@ def test_geometry_campaign_dry_run_binds_truth_hash(tmp_path, monkeypatch) -> No
     assert campaign["jobs"][0]["ground_truth_sha256"]
     assert campaign["source_manifest_sha256"]
     assert campaign["protocol"] == "evocad-geometry-v2"
+    assert campaign["agent_loop_protocol"] == "evocad-agent-loop-v2"
+    assert campaign["execution"]["feedback_turn_required"] is True
+    assert campaign["execution"]["agent_controls_continuation"] is True
 
 
 def test_geometry_campaign_binds_benchmark_split(tmp_path, monkeypatch) -> None:
@@ -153,6 +324,27 @@ def test_codex_command_mounts_only_audited_autocad_server(tmp_path, monkeypatch)
     assert "AUTOCAD_MCP_AUDIT_PATH" in encoded
     assert "ground_truth" not in encoded
     assert str(image) in command
+    assert "--ephemeral" not in command
+
+
+def test_codex_resume_keeps_thread_and_separates_feedback_from_cad(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    action = geometry_campaign.codex_resume_command(
+        "codex", "model", "medium", tmp_path, "thread-1", "repair",
+        tmp_path / "final.txt", with_autocad=True, audit_path=tmp_path / "audit.jsonl",
+    )
+    decision = geometry_campaign.codex_resume_command(
+        "codex", "model", "medium", tmp_path, "thread-1", "judge",
+        tmp_path / "reflection.json", with_autocad=False,
+        output_schema=tmp_path / "decision.schema.json",
+    )
+
+    assert "resume" in action and "thread-1" in action
+    assert "mcp_servers.autocad.command=\"python\"" in action
+    assert "resume" in decision and "thread-1" in decision
+    assert not any("mcp_servers.autocad" in value for value in decision)
+    assert "--output-schema" in decision
 
 
 def test_repair_prompt_distinguishes_best_and_latest_verdict(tmp_path, monkeypatch) -> None:
@@ -181,24 +373,58 @@ def test_repair_prompt_distinguishes_best_and_latest_verdict(tmp_path, monkeypat
     assert "a002.json" in value
 
 
-def test_repair_stopping_uses_stagnation_or_budget_not_a_fixed_two_attempts() -> None:
-    common = {
-        "passed": False,
-        "timed_out": False,
-        "return_code": 0,
-        "has_candidate": True,
-        "stagnation_limit": 2,
-        "job_time_budget": 3600,
-    }
-    assert geometry_campaign.should_stop_repairs(
-        **common, non_improving_attempts=1, elapsed_seconds=100,
-    ) is False
-    assert geometry_campaign.should_stop_repairs(
-        **common, non_improving_attempts=2, elapsed_seconds=100,
-    ) is True
-    assert geometry_campaign.should_stop_repairs(
-        **common, non_improving_attempts=0, elapsed_seconds=3600,
-    ) is True
+def test_safety_stop_does_not_treat_stagnation_as_an_automatic_stop() -> None:
+    assert geometry_campaign.safety_stop_reason(
+        passed=False, iteration=3, max_iterations=12,
+        elapsed_seconds=100, job_time_budget=3600,
+    ) is None
+    assert geometry_campaign.safety_stop_reason(
+        passed=False, iteration=12, max_iterations=12,
+        elapsed_seconds=100, job_time_budget=3600,
+    ) == "max_iterations"
+    assert geometry_campaign.safety_stop_reason(
+        passed=False, iteration=3, max_iterations=12,
+        elapsed_seconds=3600, job_time_budget=3600,
+    ) == "job_time_budget"
+    assert geometry_campaign.safety_stop_reason(
+        passed=True, iteration=1, max_iterations=12,
+        elapsed_seconds=10, job_time_budget=3600,
+    ) == "strict_pass"
+
+
+def test_feedback_diagnostics_exposes_nested_backend_failure(tmp_path) -> None:
+    events = {"errors": ["turn warning"]}
+    audit = tmp_path / "mcp-audit.jsonl"
+    stderr = tmp_path / "stderr.log"
+    audit.write_text(json.dumps({
+        "tool": "autocad_core_status",
+        "status": "pass",
+        "duration_ms": 2.5,
+        "response": {"result": {"content": [{"text": json.dumps({
+            "job_id": "job-1",
+            "status": "timed_out",
+            "return_code": 1,
+            "error": "Core Console exceeded 120 seconds",
+        })}]}},
+    }) + "\n", encoding="utf-8")
+    stderr.write_text("connection warning\n", encoding="utf-8")
+
+    diagnostics = geometry_campaign._feedback_diagnostics(events, audit, stderr)
+
+    assert diagnostics["codex_errors"] == ["turn warning"]
+    assert diagnostics["mcp_calls"][0]["transport_status"] == "pass"
+    assert diagnostics["mcp_calls"][0]["backend_result"]["status"] == "timed_out"
+    assert diagnostics["stderr_tail"] == ["connection warning"]
+
+
+def test_agent_decision_validation_requires_coherent_continuation() -> None:
+    with pytest.raises(ValueError, match="planned geometry or recovery action"):
+        geometry_campaign._validate_agent_decision({
+            "decision": "continue",
+            "can_improve": True,
+            "planned_geometry_changes": [],
+            "expected_score_gain": 10,
+        })
 
 
 def test_attempt_timeout_is_bounded_by_remaining_job_budget() -> None:

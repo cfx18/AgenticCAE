@@ -108,7 +108,7 @@ function renderRun() {
 
 function renderAttempts(run) {
   $("attemptButtons").innerHTML = run.attempts.map((attempt) => `<button class="attempt-button ${attempt.attempt_id === state.selectedAttempt ? "active" : ""} ${attempt.passed ? "passed" : "failed"}" data-attempt="${escapeHtml(attempt.attempt_id)}">
-    <span>${escapeHtml(attempt.attempt_id)}</span><strong>${fmt(attempt.score, 1)}</strong><small>${attempt.selected ? "selected" : attempt.timed_out ? "timeout" : attempt.passed ? "pass" : "repair"}</small>
+    <span>${escapeHtml(attempt.attempt_id)}</span><strong>${fmt(attempt.score, 1)}</strong><small>${attempt.safety_stop_reason ? `safety: ${escapeHtml(attempt.safety_stop_reason)}` : attempt.agent_decision ? `agent: ${escapeHtml(attempt.agent_decision)}` : attempt.selected ? "selected" : attempt.timed_out ? "timeout" : attempt.passed ? "pass" : "no decision"}</small>
   </button>`).join("");
   document.querySelectorAll(".attempt-button").forEach((button) => button.addEventListener("click", () => selectAttempt(button.dataset.attempt)));
 }
@@ -167,12 +167,17 @@ function listBlock(title, items) {
 
 function renderReflection(attempt) {
   const reflection = attempt.reflection || {};
+  const decision = attempt.agent_decision || reflection.decision;
+  const safety = attempt.safety_stop_reason;
+  $("iterationDecision").className = `iteration-decision ${decision || "unavailable"} ${safety ? "safety" : ""}`;
+  $("iterationDecision").innerHTML = `<div><span>Agent decision</span><strong>${escapeHtml(decision || "unavailable")}</strong></div><p>${escapeHtml(attempt.decision_reason || reflection.decision_reason || "No decision reason was recorded.")}</p><div class="decision-facts"><span>Can improve <strong>${reflection.can_improve ?? attempt.can_improve ?? "N/A"}</strong></span><span>Expected gain <strong>${reflection.expected_score_gain == null ? "N/A" : fmt(reflection.expected_score_gain, 1)}</strong></span><span>Safety stop <strong>${escapeHtml(safety || "none")}</strong></span></div><div class="structure-assessment"><span>Structure assessment</span><p>${escapeHtml(reflection.structure_assessment || "Not recorded")}</p><span>System change proposal</span><p>${escapeHtml(reflection.system_change_proposal || "None")}</p></div>`;
+  $("feedbackPacket").textContent = attempt.feedback_packet ? JSON.stringify(attempt.feedback_packet, null, 2) : "Feedback packet was not recorded for this legacy attempt.";
   $("reflectionContent").innerHTML = `<section class="owner"><h3>Failure owner</h3><strong>${escapeHtml(reflection.failure_owner || "not recorded")}</strong><span>Confidence ${reflection.confidence == null ? "N/A" : fmt(reflection.confidence, 2)}</span></section>` +
     listBlock("Observed failures", reflection.observed_failures) + listBlock("Root causes", reflection.root_causes) + listBlock("Planned changes", reflection.planned_geometry_changes);
   $("publicEvents").innerHTML = (attempt.public_events || []).map((event, index) => {
     const title = event.type === "agent_message" ? "Agent message" : event.type === "mcp_tool_call" ? `MCP · ${event.tool}` : "Command";
     const detail = event.text || event.command || JSON.stringify(event.arguments || {});
-    return `<details ${index < 2 ? "open" : ""}><summary><span>${index + 1}</span><strong>${escapeHtml(title)}</strong><i class="${event.status === "completed" ? "ok" : "warn"}">${escapeHtml(event.status || "")}</i></summary><pre>${escapeHtml(detail)}</pre>${event.error ? `<p class="error-text">${escapeHtml(JSON.stringify(event.error))}</p>` : ""}</details>`;
+    return `<details ${index < 2 ? "open" : ""}><summary><span>${index + 1}</span><strong>${escapeHtml(title)}</strong><i>${escapeHtml(event.phase || "action")}</i><i class="${event.status === "completed" ? "ok" : "warn"}">${escapeHtml(event.status || "")}</i></summary><pre>${escapeHtml(detail)}</pre>${event.error ? `<p class="error-text">${escapeHtml(JSON.stringify(event.error))}</p>` : ""}</details>`;
   }).join("") || `<div class="empty">No public action events were recorded.</div>`;
 }
 

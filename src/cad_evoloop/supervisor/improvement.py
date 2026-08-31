@@ -81,7 +81,7 @@ def stored_artifact(run_dir: Path, record: dict[str, Any]) -> Path:
 
 def diagnose(verdict: dict[str, Any], reflection: dict[str, Any] | None) -> dict[str, Any]:
     if reflection and reflection.get("failure_owner") in {
-        "drawing", "prompt", "skill", "mcp", "verifier", "task",
+        "drawing", "prompt", "skill", "mcp", "verifier", "harness", "task",
     }:
         owner = reflection["failure_owner"]
     else:
