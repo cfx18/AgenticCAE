@@ -310,7 +310,7 @@ def test_geometry_campaign_binds_benchmark_split(tmp_path, monkeypatch) -> None:
     }
 
 
-def test_geometry_campaign_aborts_after_repeated_agent_start_failures(tmp_path, monkeypatch) -> None:
+def test_geometry_campaign_aborts_after_repeated_agent_loop_failures(tmp_path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     manifest = _manifest(workspace / ".local/data")
@@ -319,18 +319,23 @@ def test_geometry_campaign_aborts_after_repeated_agent_start_failures(tmp_path, 
 
     def fail_start(**kwargs):
         calls.append(kwargs["model"])
+        decision_failed = len(calls) == 2
         return {
             "sample_id": kwargs["sample"]["sample_id"],
             "model": kwargs["model"],
             "passed": False,
             "score": 0.0,
             "stop_reason": "decision_unavailable",
-            "attempts": [{"thread_id": None, "return_code": 1}],
+            "attempts": [{
+                "thread_id": "thread-2" if decision_failed else None,
+                "return_code": 0 if decision_failed else 1,
+                "decision_return_code": 1 if decision_failed else None,
+            }],
         }
 
     monkeypatch.setattr(geometry_campaign, "run_geometry_job", fail_start)
 
-    with pytest.raises(RuntimeError, match="three consecutive Codex agent startup failures"):
+    with pytest.raises(RuntimeError, match="three consecutive Codex agent-loop failures"):
         geometry_campaign.run_geometry_campaign(
             manifest,
             campaign="startup-failure",
