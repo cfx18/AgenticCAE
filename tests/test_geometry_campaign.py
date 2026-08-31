@@ -378,6 +378,18 @@ def test_codex_resume_keeps_thread_and_separates_feedback_from_cad(tmp_path, mon
     assert "--output-schema" in decision
 
 
+def test_agent_decision_schema_declares_types_for_structured_output() -> None:
+    schema_path = (
+        Path(__file__).parents[1]
+        / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"])
+    assert all("type" in value for value in schema["properties"].values())
+
+
 def test_repair_prompt_distinguishes_best_and_latest_verdict(tmp_path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)

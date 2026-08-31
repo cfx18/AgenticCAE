@@ -10,8 +10,9 @@
     "planned_geometry_changes", "system_change_proposal", "expected_score_gain", "confidence"
   ],
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"type": "string", "const": "1.0"},
     "failure_owner": {
+      "type": "string",
       "enum": ["drawing", "prompt", "skill", "task", "mcp", "verifier", "harness", "none"]
     },
     "observed_failures": {
@@ -26,7 +27,7 @@
     },
     "structure_assessment": {"type": "string", "minLength": 1, "maxLength": 4000},
     "can_improve": {"type": "boolean"},
-    "decision": {"enum": ["continue", "stop"]},
+    "decision": {"type": "string", "enum": ["continue", "stop"]},
     "decision_reason": {"type": "string", "minLength": 1, "maxLength": 4000},
     "planned_geometry_changes": {
       "type": "array",
