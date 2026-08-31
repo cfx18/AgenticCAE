@@ -1,7 +1,10 @@
+import { createSynchronizedGeometryViewers } from "./geometry-viewer.js";
+
 const state = {
   data: null, reviews: null, selectedTarget: null, selectedAttempt: null,
   inputIndex: 0, reviewStartedAt: Date.now(), filters: { dataset: "all", model: "all", outcome: "all", review: "all" },
 };
+let geometryViewers = null;
 
 const ISSUE_LABELS = {
   agent_geometry: "Agent geometry", agent_reasoning: "Agent reasoning", input_ambiguity: "Input ambiguity",
@@ -129,6 +132,13 @@ function renderEvidence(run, attempt) {
   setImage("truthImage", attempt.images.ground_truth, "Ground-truth render unavailable");
   setImage("candidateImage", attempt.images.candidate, "Candidate render unavailable");
   setImage("overlayImage", attempt.images.overlay, "Overlay unavailable");
+  geometryViewers?.dispose();
+  geometryViewers = createSynchronizedGeometryViewers({
+    containers: {
+      truth: $("truthViewer"), candidate: $("candidateViewer"), overlay: $("overlayViewer"),
+    },
+    geometry: attempt.geometry || {},
+  });
   $("candidateCaption").textContent = attempt.attempt_id;
   $("truthCaption").textContent = `SHA ${shortHash(run.ground_truth_sha256)}`;
   $("candidateState").textContent = `SHA ${shortHash(attempt.evidence?.candidate?.sha256)}`;

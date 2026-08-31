@@ -163,6 +163,11 @@ class HumanReviewStore:
                 for name, evidence in image_evidence.items():
                     if evidence and image_paths.get(name):
                         assets.append({"path": image_paths[name], **evidence})
+                geometry_paths = attempt.get("geometry") or {}
+                geometry_evidence = (attempt.get("evidence") or {}).get("geometry_assets") or {}
+                for name, evidence in geometry_evidence.items():
+                    if evidence and geometry_paths.get(name):
+                        assets.append({"path": geometry_paths[name], **evidence})
             for evidence in assets:
                 relative = evidence.get("path")
                 if not relative:

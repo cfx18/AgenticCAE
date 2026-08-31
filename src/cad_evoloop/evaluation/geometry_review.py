@@ -73,9 +73,33 @@ def _copy_asset(source: Path, assets: Path, name: str) -> str | None:
 def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
     implementation_root = Path(__file__).resolve().parents[3]
     app_sources = [
-        implementation_root / "apps/geometry-review/index.html",
-        implementation_root / "apps/geometry-review/app.js",
-        implementation_root / "apps/geometry-review/styles.css",
+        (implementation_root / "apps/geometry-review/index.html", Path("index.html")),
+        (implementation_root / "apps/geometry-review/app.js", Path("app.js")),
+        (
+            implementation_root / "apps/geometry-review/geometry-viewer.js",
+            Path("geometry-viewer.js"),
+        ),
+        (implementation_root / "apps/geometry-review/styles.css", Path("styles.css")),
+        (
+            implementation_root / "apps/geometry-review/vendor/three/three.module.min.js",
+            Path("vendor/three/three.module.min.js"),
+        ),
+        (
+            implementation_root / "apps/geometry-review/vendor/three/addons/controls/OrbitControls.js",
+            Path("vendor/three/addons/controls/OrbitControls.js"),
+        ),
+        (
+            implementation_root / "apps/geometry-review/vendor/three/addons/loaders/STLLoader.js",
+            Path("vendor/three/addons/loaders/STLLoader.js"),
+        ),
+        (
+            implementation_root / "apps/geometry-review/vendor/three/LICENSE.txt",
+            Path("vendor/three/LICENSE.txt"),
+        ),
+        (
+            implementation_root / "apps/geometry-review/vendor/README.md",
+            Path("vendor/README.md"),
+        ),
     ]
     source_files = [
         Path(__file__).resolve(),
@@ -97,7 +121,10 @@ def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
             **(_file_evidence(destination) or {}),
         }
 
-    app_records = [snapshot(source, output_dir / "app" / source.name) for source in app_sources]
+    app_records = [
+        snapshot(source, output_dir / "app" / relative)
+        for source, relative in app_sources
+    ]
     source_records = [
         snapshot(source, output_dir / "review-system" / source.name) for source in source_files
     ]
@@ -226,32 +253,36 @@ def _draw_meshes(meshes: Iterable[tuple[Any, tuple[int, int, int, int]]], output
     image.convert("RGB").save(output, quality=92)
 
 
-def _render_geometry_evidence(
-    candidate_path: Path,
-    ground_truth_path: Path,
-    verdict: dict[str, Any],
-    candidate_output: Path,
-    overlay_output: Path,
-    ground_truth_output: Path,
-) -> None:
-    from .geometry_score import _load_mesh
+def _align_candidate(candidate, ground_truth, verdict: dict[str, Any]):
     import numpy as np
 
-    candidate = _load_mesh(candidate_path)
-    ground_truth = _load_mesh(ground_truth_path)
+    aligned = candidate.copy()
     rotation = np.asarray((verdict.get("alignment") or {}).get("rotation"), dtype=float)
-    if rotation.shape == (3, 3):
-        candidate.vertices = (
-            (candidate.vertices - candidate.bounds.mean(axis=0)) @ rotation.T
-            + ground_truth.bounds.mean(axis=0)
-        )
+    if rotation.shape != (3, 3):
+        rotation = np.eye(3)
+    aligned.vertices = (
+        (aligned.vertices - aligned.bounds.mean(axis=0)) @ rotation.T
+        + ground_truth.bounds.mean(axis=0)
+    )
+    return aligned
+
+
+def _render_geometry_evidence(
+    candidate,
+    ground_truth,
+    candidate_output: Path,
+    overlay_output: Path,
+) -> None:
     _draw_meshes([(candidate, (223, 132, 61, 220))], candidate_output)
-    if not ground_truth_output.is_file():
-        _draw_meshes([(ground_truth, (67, 151, 184, 235))], ground_truth_output)
     _draw_meshes([
         (ground_truth, (67, 151, 184, 105)),
         (candidate, (223, 132, 61, 145)),
     ], overlay_output)
+
+
+def _export_stl(mesh, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    mesh.export(str(output), file_type="stl")
 
 
 def generate_geometry_review_bundle(
@@ -312,6 +343,20 @@ def generate_geometry_review_bundle(
         if resolved_source and sample.get("ground_truth_step"):
             ground_truth = (resolved_source.parent / sample["ground_truth_step"]).resolve()
         truth_render = assets / asset_root / "ground-truth.png"
+        truth_geometry = assets / asset_root / "ground-truth.stl"
+        truth_render.unlink(missing_ok=True)
+        truth_geometry.unlink(missing_ok=True)
+        ground_truth_mesh = None
+        ground_truth_error = None
+        if render_geometry and ground_truth and ground_truth.is_file():
+            try:
+                from .geometry_score import _load_mesh
+
+                ground_truth_mesh = _load_mesh(ground_truth)
+                _export_stl(ground_truth_mesh, truth_geometry)
+                _draw_meshes([(ground_truth_mesh, (67, 151, 184, 235))], truth_render)
+            except Exception as exc:
+                ground_truth_error = repr(exc)
         attempts = []
         for attempt_result in result.get("attempts", []):
             attempt_id = str(attempt_result["attempt_id"])
@@ -342,12 +387,21 @@ def generate_geometry_review_bundle(
                 parse_errors.append({"artifact": "feedback-packet.json", "error": str(exc)})
             candidate_render = assets / asset_root / f"{attempt_id}-candidate.png"
             overlay_render = assets / asset_root / f"{attempt_id}-overlay.png"
-            render_error = None
-            if render_geometry and candidate_path.is_file() and ground_truth and ground_truth.is_file():
+            candidate_geometry = assets / asset_root / f"{attempt_id}-candidate.stl"
+            candidate_render.unlink(missing_ok=True)
+            overlay_render.unlink(missing_ok=True)
+            candidate_geometry.unlink(missing_ok=True)
+            render_error = ground_truth_error
+            if render_geometry and candidate_path.is_file() and ground_truth_mesh is not None:
                 try:
+                    from .geometry_score import _load_mesh
+
+                    candidate_mesh = _align_candidate(
+                        _load_mesh(candidate_path), ground_truth_mesh, verdict,
+                    )
+                    _export_stl(candidate_mesh, candidate_geometry)
                     _render_geometry_evidence(
-                        candidate_path, ground_truth, verdict,
-                        candidate_render, overlay_render, truth_render,
+                        candidate_mesh, ground_truth_mesh, candidate_render, overlay_render,
                     )
                 except Exception as exc:
                     render_error = repr(exc)
@@ -364,6 +418,10 @@ def generate_geometry_review_bundle(
                     "candidate": _file_evidence(candidate_render),
                     "overlay": _file_evidence(overlay_render),
                     "ground_truth": _file_evidence(truth_render),
+                },
+                "geometry_assets": {
+                    "candidate": _file_evidence(candidate_geometry),
+                    "ground_truth": _file_evidence(truth_geometry),
                 },
             }
             attempts.append({
@@ -393,6 +451,12 @@ def generate_geometry_review_bundle(
                     if overlay_render.is_file() else None,
                     "ground_truth": "assets/" + truth_render.relative_to(assets).as_posix()
                     if truth_render.is_file() else None,
+                },
+                "geometry": {
+                    "candidate": "assets/" + candidate_geometry.relative_to(assets).as_posix()
+                    if candidate_geometry.is_file() else None,
+                    "ground_truth": "assets/" + truth_geometry.relative_to(assets).as_posix()
+                    if truth_geometry.is_file() else None,
                 },
                 "render_error": render_error,
                 "parse_errors": parse_errors,

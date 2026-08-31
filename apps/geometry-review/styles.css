@@ -112,13 +112,23 @@ h3 { margin: 0; font-size: 12px; }
 .tab-panel { display: none; padding-top: 14px; }
 .tab-panel.active { display: block; }
 
-.evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.evidence-grid figure { min-width: 0; margin: 0; border: 1px solid var(--line); background: #fff; }
-.evidence-grid figcaption { min-height: 38px; display: flex; justify-content: space-between; gap: 8px; padding: 10px 11px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 750; }
-.evidence-grid figcaption span { color: var(--muted); font-size: 9px; font-weight: 500; text-align: right; }
+.reference-evidence { margin-bottom: 12px; }
+.geometry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.reference-evidence figure, .geometry-grid figure { min-width: 0; margin: 0; border: 1px solid var(--line); background: #fff; }
+.reference-evidence figcaption, .geometry-grid figcaption { min-height: 38px; display: flex; justify-content: space-between; gap: 8px; padding: 10px 11px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 750; }
+.reference-evidence figcaption span, .geometry-grid figcaption span { color: var(--muted); font-size: 9px; font-weight: 500; text-align: right; }
 .image-button { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; padding: 0; border: 0; background: #1c252c; overflow: hidden; }
 .image-button img { width: 100%; height: 100%; object-fit: contain; }
 .image-button.missing::after { content: attr(data-empty); color: #aab5bc; font-size: 12px; }
+.reference-image { height: clamp(440px, 62vh, 720px); aspect-ratio: auto; background: #fff; }
+.geometry-viewer { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #1c252c; overflow: hidden; }
+.geometry-viewer canvas, .geometry-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.geometry-viewer canvas { display: block; touch-action: none; }
+.geometry-viewer canvas[hidden], .geometry-fallback[hidden] { display: none; }
+.geometry-fallback { object-fit: contain; }
+.viewer-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: #aab5bc; font-size: 11px; text-align: center; pointer-events: none; }
+.reset-view { position: absolute; top: 8px; right: 8px; min-height: 27px; padding: 0 8px; border: 1px solid #81909a; border-radius: 3px; color: #eef3f5; background: rgba(25, 34, 41, .82); font-size: 9px; }
+.reset-view:hover { background: #2d3b45; }
 .image-switcher, .image-caption { min-height: 32px; padding: 6px 9px; color: var(--muted); font: 10px "Cascadia Mono", Consolas, monospace; }
 .image-switcher { display: flex; gap: 5px; }
 .image-switcher button { width: 24px; height: 22px; border: 1px solid #b9c3ca; border-radius: 3px; background: #fff; font-size: 10px; }
@@ -261,7 +271,8 @@ dialog button { position: absolute; top: 8px; right: 10px; padding: 4px 9px; bor
   .metrics { grid-template-columns: repeat(2, 1fr); }
   .metric, .metric:nth-child(3n) { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .metric:nth-child(even) { border-right: 0; }
-  .evidence-grid, .verifier-layout { grid-template-columns: 1fr; }
+  .geometry-grid, .verifier-layout { grid-template-columns: 1fr; }
+  .reference-image { height: min(72vh, 620px); }
   .reflection-grid { grid-template-columns: 1fr; }
   .reflection-grid section { border-right: 0; }
   .iteration-decision { grid-template-columns: 1fr; }

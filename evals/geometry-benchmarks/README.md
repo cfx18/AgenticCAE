@@ -95,7 +95,12 @@ cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-cost-pilot-
 ```
 
 Export the same frozen trajectories for expert review and start the local
-workbench. This does not invoke the agent or AutoCAD:
+workbench. This does not invoke the agent or AutoCAD. With `--render-geometry`,
+the bundle includes hash-bound browser STL assets alongside deterministic PNG
+fallbacks. The review workbench presents the complete input drawing at full
+width and synchronized orthographic ground-truth, candidate, and overlay
+viewports: rotating, panning, or zooming any geometry viewport updates all
+three.
 
 ```powershell
 cad-evoloop geometry-review-export `

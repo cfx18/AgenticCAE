@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from cad_evoloop.evaluation import geometry_review
 from cad_evoloop.evaluation.geometry_review import generate_geometry_review_bundle
 from cad_evoloop.evaluation.human_review import HumanReviewStore
 from cad_evoloop.ledger.ledger import sha256_file
@@ -186,3 +187,59 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
+    assert 'type="module" src="app.js"' in html
+    assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
+    viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
+    assert "OrbitControls" in viewer
+    assert "syncFrom" in viewer
+
+
+def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatch) -> None:
+    trimesh = pytest.importorskip("trimesh")
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    ground_truth = trimesh.creation.box(extents=(10, 20, 30))
+    candidate = trimesh.creation.box(extents=(8, 18, 28))
+    candidate.apply_translation((100, -40, 12))
+
+    def load_mesh(path):
+        return candidate.copy() if Path(path).name == "candidate.stl" else ground_truth.copy()
+
+    monkeypatch.setattr("cad_evoloop.evaluation.geometry_score._load_mesh", load_mesh)
+    payload = generate_geometry_review_bundle(
+        campaign, output, source_manifest=source, render_geometry=True,
+    )
+
+    attempt = payload["runs"][0]["attempts"][0]
+    assert attempt["geometry"]["candidate"].endswith("a001-candidate.stl")
+    assert attempt["geometry"]["ground_truth"].endswith("ground-truth.stl")
+    assert attempt["evidence"]["geometry_assets"]["candidate"]["sha256"]
+    store = HumanReviewStore(output / "review-data.json", workspace / "reviews.jsonl")
+    assert store.verify_bundle()["ok"] is True
+
+
+def test_candidate_alignment_uses_truth_center_without_rotation() -> None:
+    trimesh = pytest.importorskip("trimesh")
+    candidate = trimesh.creation.box(extents=(2, 4, 6))
+    candidate.apply_translation((20, -7, 3))
+    truth = trimesh.creation.box(extents=(4, 6, 8))
+    truth.apply_translation((-3, 9, 12))
+
+    aligned = geometry_review._align_candidate(candidate, truth, {"alignment": {}})
+
+    assert aligned.bounds.mean(axis=0) == pytest.approx(truth.bounds.mean(axis=0))
+
+
+def test_review_export_does_not_reuse_stale_geometry_assets(tmp_path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    stale = output / "assets/sample-1/model-a/a001-candidate.stl"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"stale")
+
+    payload = generate_geometry_review_bundle(
+        campaign, output, source_manifest=source, render_geometry=False,
+    )
+
+    assert not stale.exists()
+    assert payload["runs"][0]["attempts"][0]["geometry"]["candidate"] is None
