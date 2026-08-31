@@ -17,6 +17,8 @@ evaluation; pilot results are engineering evidence, not a paper benchmark.
 - `src/cad_evoloop/evaluation/`: sealed inputs, immutable campaigns, and EQC metrics.
 - `src/cad_evoloop/ledger/`: append-only trajectories, artifacts, source hashes,
   integrity checks, and run comparison.
+- `apps/geometry-review/`: local expert adjudication of geometry evidence,
+  verifier decisions, repair trajectories, and MCP failures.
 - `.agents/skills/autocad-image-modeling/`: the project CAD skill.
 
 The old `mcp/` and `evals/...` Python entry points remain compatibility wrappers.
@@ -60,6 +62,12 @@ failures. Fused EQC success, not the legacy nominal score, controls completion.
 The local Run Explorer in `apps/run-explorer/` reads only exported campaign
 data and cached images. Serve the repository root with a static HTTP server and
 open `/apps/run-explorer/`; it never redraws a CAD artifact or calls a model.
+
+Geometry campaigns use the separate review workbench in
+`apps/geometry-review/`. Its loopback API writes hash-chained, immutable human
+adjudications under `evals/geometry-benchmarks/human-reviews/`, so verifier
+false positives, false negatives, data defects, and reviewer disagreement can
+be audited against exact evidence versions.
 
 ## Data and Generated Artifacts
 

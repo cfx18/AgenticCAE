@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EvoCAD Geometry Review</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">E</span><span>EvoCAD</span><small>Geometry Review</small></div>
+    <div class="campaign-meta"><strong id="campaignName">Loading</strong><code id="protocolLabel"></code></div>
+    <div class="review-progress"><span id="reviewProgress">0 / 0 reviewed</span><span id="ledgerIntegrity">Ledger pending</span></div>
+  </header>
+
+  <main class="workspace">
+    <aside class="run-browser">
+      <div class="filter-grid">
+        <label>Dataset<select id="datasetFilter"></select></label>
+        <label>Model<select id="modelFilter"></select></label>
+        <label>Verifier<select id="outcomeFilter"><option value="all">All outcomes</option><option value="passed">Strict pass</option><option value="failed">Strict fail</option></select></label>
+        <label>Human review<select id="reviewFilter"><option value="all">All records</option><option value="pending">Pending</option><option value="reviewed">Reviewed</option><option value="disputed">Disputed</option></select></label>
+      </div>
+      <div class="run-count" id="runCount"></div>
+      <section class="review-audit">
+        <h2>Evaluation audit</h2>
+        <div id="reviewAuditMetrics"></div>
+      </section>
+      <div class="run-list" id="runList"></div>
+    </aside>
+
+    <section class="inspection">
+      <header class="run-heading">
+        <div><div class="eyebrow" id="datasetLabel"></div><h1 id="taskTitle">Select a run</h1></div>
+        <div class="run-identity"><strong id="modelLabel"></strong><code id="targetId"></code></div>
+      </header>
+
+      <div class="annotation-banner" id="annotationBanner" hidden></div>
+      <div class="metrics" id="metrics"></div>
+
+      <section class="attempt-strip" aria-label="Attempts">
+        <div class="section-label">Attempt trajectory</div>
+        <div class="attempts" id="attemptButtons"></div>
+      </section>
+
+      <nav class="tabs" aria-label="Evidence views">
+        <button class="tab active" data-tab="evidence">Visual evidence</button>
+        <button class="tab" data-tab="verifier">Verifier</button>
+        <button class="tab" data-tab="reflection">Reflection & actions</button>
+        <button class="tab" data-tab="mcp">MCP audit</button>
+      </nav>
+
+      <section class="tab-panel active" id="evidencePanel">
+        <div class="evidence-grid">
+          <figure><figcaption>Agent input <span>visible during modeling</span></figcaption><button class="image-button" data-image="input"><img id="inputImage" alt="Agent input image"></button><div class="image-switcher" id="inputSwitcher"></div></figure>
+          <figure><figcaption>Evaluator ground truth <span>hidden from agent</span></figcaption><button class="image-button" data-image="truth"><img id="truthImage" alt="Ground truth geometry render"></button><div class="image-caption" id="truthCaption"></div></figure>
+          <figure><figcaption>Candidate <span id="candidateCaption"></span></figcaption><button class="image-button" data-image="candidate"><img id="candidateImage" alt="Candidate geometry render"></button><div class="image-caption" id="candidateState"></div></figure>
+          <figure><figcaption>Aligned overlay <span>blue truth / orange candidate</span></figcaption><button class="image-button" data-image="overlay"><img id="overlayImage" alt="Aligned candidate and ground truth overlay"></button><div class="image-caption" id="overlayState"></div></figure>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="verifierPanel">
+        <div class="verifier-layout">
+          <div><h2>Protocol checks</h2><div class="check-list" id="checkList"></div></div>
+          <div><h2>Geometry diagnostics</h2><div class="geometry-table" id="geometryTable"></div></div>
+        </div>
+        <div class="binding-block"><span>Protocol</span><code id="protocolBinding"></code><span>Evidence SHA</span><code id="evidenceHash"></code></div>
+      </section>
+
+      <section class="tab-panel" id="reflectionPanel">
+        <div class="reflection-note">Only recorded agent messages and submitted reflection are shown. Hidden chain-of-thought is not part of the review evidence.</div>
+        <div class="reflection-grid" id="reflectionContent"></div>
+        <h2>Public action trace</h2>
+        <div class="timeline" id="publicEvents"></div>
+      </section>
+
+      <section class="tab-panel" id="mcpPanel">
+        <div class="audit-summary" id="auditSummary"></div>
+        <div class="timeline" id="mcpEvents"></div>
+      </section>
+    </section>
+
+    <aside class="review-panel">
+      <header><div><div class="eyebrow">Human adjudication</div><h2 id="reviewTarget">No target selected</h2></div><button id="exportReviews" class="secondary" type="button">Export</button></header>
+      <div class="binding-alert" id="reviewBinding"></div>
+      <form id="reviewForm">
+        <div class="two-col">
+          <label>Reviewer ID<input id="reviewerId" required maxlength="120" autocomplete="name"></label>
+          <label>Expertise<input id="reviewerExpertise" maxlength="120" placeholder="CAD / evaluator"></label>
+        </div>
+
+        <fieldset><legend>Is the verifier conclusion correct?</legend><div class="decision-grid" id="decisionInputs">
+          <label><input type="radio" name="verifierDecision" value="agree" required><span>Agree</span></label>
+          <label><input type="radio" name="verifierDecision" value="partially_agree"><span>Partial</span></label>
+          <label><input type="radio" name="verifierDecision" value="disagree"><span>Disagree</span></label>
+          <label><input type="radio" name="verifierDecision" value="uncertain"><span>Uncertain</span></label>
+        </div></fieldset>
+
+        <div class="two-col">
+          <label>Strict pass label<select id="strictAssessment" required><option value="correct">Correct</option><option value="false_positive">False positive</option><option value="false_negative">False negative</option><option value="uncertain">Uncertain</option></select></label>
+          <label>Selected attempt<select id="selectionAssessment" required><option value="correct">Correct</option><option value="incorrect">Incorrect</option><option value="uncertain">Uncertain</option><option value="not_applicable">N/A</option></select></label>
+        </div>
+
+        <fieldset><legend>Ratings <span>1 poor, 5 strong</span></legend><div class="rating-grid">
+          <label>Evidence<select data-rating="evidence_sufficiency"></select></label>
+          <label>Geometry<select data-rating="geometry_fidelity"></select></label>
+          <label>Verifier<select data-rating="verifier_validity"></select></label>
+          <label>Reflection<select data-rating="reflection_quality"></select></label>
+        </div></fieldset>
+
+        <fieldset><legend>Issue ownership</legend><div class="issue-grid" id="issueInputs"></div></fieldset>
+
+        <label>Recommended action<select id="recommendedAction" required><option value="keep">Keep evaluation</option><option value="override_pass">Override as pass</option><option value="override_fail">Override as fail</option><option value="exclude_sample">Exclude sample</option><option value="revise_verifier">Revise verifier</option><option value="rerun">Rerun evidence</option><option value="needs_expert">Needs expert</option></select></label>
+        <label>Review notes<textarea id="reviewNotes" rows="5" maxlength="12000" placeholder="State what the evidence supports and what should change."></textarea></label>
+
+        <section class="findings-section"><div class="findings-heading"><strong>Structured findings</strong><button id="addFinding" class="secondary" type="button">Add finding</button></div><div id="findings"></div></section>
+        <input id="supersedesId" type="hidden">
+        <div class="form-status" id="formStatus"></div>
+        <button class="primary" id="submitReview" type="submit">Save immutable review</button>
+      </form>
+
+      <section class="history"><div class="history-heading"><h3>Review history</h3><span id="historyCount"></span></div><div id="reviewHistory"></div></section>
+    </aside>
+  </main>
+
+  <dialog id="imageDialog"><button id="closeDialog" aria-label="Close image">Close</button><img id="dialogImage" alt="Expanded review evidence"></dialog>
+  <script src="app.js"></script>
+</body>
+</html>

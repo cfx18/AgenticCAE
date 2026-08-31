@@ -18,7 +18,9 @@ from .evaluation.geometry_dataset import materialize_geometry_pilot
 from .evaluation.geometry_score import calibrate_geometry_manifest, score_geometry_files
 from .evaluation.geometry_campaign import run_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
+from .evaluation.geometry_review import generate_geometry_review_bundle
 from .evaluation.geometry_split import write_geometry_split
+from .evaluation.human_review import HumanReviewStore, serve_geometry_review
 from .paths import project_root
 from .verification.export_core_console import export_dwg_core
 
@@ -256,6 +258,56 @@ def _split_geometry() -> None:
     }, ensure_ascii=False))
 
 
+def _export_geometry_review() -> None:
+    parser = argparse.ArgumentParser(description="Export a human-reviewable geometry evidence bundle")
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--source-manifest", type=Path)
+    parser.add_argument("--annotations", type=Path)
+    parser.add_argument("--render-geometry", action="store_true")
+    args = parser.parse_args()
+    payload = generate_geometry_review_bundle(
+        args.campaign_dir,
+        args.output,
+        source_manifest=args.source_manifest,
+        annotations_path=args.annotations,
+        render_geometry=args.render_geometry,
+    )
+    print(json.dumps({
+        "campaign_id": payload["campaign"]["campaign_id"],
+        "runs": len(payload["runs"]),
+        "bundle_sha256": payload["bundle_sha256"],
+        "output": str((args.output / "review-data.json").resolve()),
+    }, ensure_ascii=False))
+
+
+def _serve_geometry_review() -> None:
+    parser = argparse.ArgumentParser(description="Serve the geometry review workbench and ledger API")
+    parser.add_argument("bundle_dir", type=Path)
+    parser.add_argument("--reviews", type=Path, required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8766)
+    args = parser.parse_args()
+    serve_geometry_review(
+        args.bundle_dir,
+        args.reviews,
+        app_dir=args.bundle_dir / "app",
+        host=args.host,
+        port=args.port,
+    )
+
+
+def _verify_geometry_reviews() -> None:
+    parser = argparse.ArgumentParser(description="Verify and summarize a human review ledger")
+    parser.add_argument("bundle", type=Path, help="Path to review-data.json")
+    parser.add_argument("reviews", type=Path, help="Path to the human review JSONL ledger")
+    args = parser.parse_args()
+    result = HumanReviewStore(args.bundle, args.reviews).response()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if not result["integrity"]["ok"]:
+        raise SystemExit(1)
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -273,6 +325,9 @@ def main() -> None:
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
         "geometry-split": (_split_geometry, "create a deterministic benchmark split"),
+        "geometry-review-export": (_export_geometry_review, "export human-reviewable geometry evidence"),
+        "geometry-review-serve": (_serve_geometry_review, "serve the geometry review workbench"),
+        "geometry-review-verify": (_verify_geometry_reviews, "verify and summarize human reviews"),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:
         command = sys.argv[1]

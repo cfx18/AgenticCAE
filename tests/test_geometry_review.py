@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from cad_evoloop.evaluation.geometry_review import generate_geometry_review_bundle
+from cad_evoloop.evaluation.human_review import HumanReviewStore
+from cad_evoloop.ledger.ledger import sha256_file
+
+
+def _campaign(tmp_path: Path) -> tuple[Path, Path, Path]:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    source = workspace / ".local/datasets/geometry/manifest.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({
+        "schema_version": "1.0",
+        "samples": [{
+            "sample_id": "sample:1", "dataset": "ortho2cad", "task": "Build the part",
+            "ground_truth_step": "sample/ground-truth.step",
+        }],
+    }), encoding="utf-8")
+    truth = source.parent / "sample/ground-truth.step"
+    truth.parent.mkdir()
+    truth.write_bytes(b"step")
+    campaign = workspace / "evals/geometry-benchmarks/batch/pilot"
+    job = campaign / "sample-1/model-a"
+    attempt = job / "attempts/a001"
+    (job / "input_files").mkdir(parents=True)
+    attempt.mkdir(parents=True)
+    (job / "input_files/input-01.png").write_bytes(b"png")
+    (job / "task.json").write_text(json.dumps({
+        "sample_id": "sample:1", "dataset": "ortho2cad", "task": "Build the part",
+    }), encoding="utf-8")
+    verdict = {
+        "schema_version": "1.0", "protocol": "evocad-geometry-v2", "score": 82.0,
+        "passed": False, "rubrics": [{
+            "id": "voxel_iou", "status": "failed", "actual": 0.9, "minimum": 0.99,
+        }],
+    }
+    (attempt / "geometry-verdict.json").write_text(json.dumps(verdict), encoding="utf-8")
+    (attempt / "reflection.json").write_text(json.dumps({
+        "failure_owner": "drawing", "observed_failures": ["IoU low"],
+    }), encoding="utf-8")
+    (attempt / "candidate.stl").write_bytes(b"solid test\nendsolid test\n")
+    (attempt / "codex-events.jsonl").write_text(json.dumps({
+        "type": "item.completed", "item": {"type": "agent_message", "text": "I will repair it."},
+    }) + "\n", encoding="utf-8")
+    (attempt / "mcp-audit.jsonl").write_text(json.dumps({
+        "event_id": "e1", "tool": "autocad_core_start", "status": "fail",
+        "duration_ms": 4.2, "arguments": {"timeout": 120000},
+    }) + "\n", encoding="utf-8")
+    manifest = {
+        "schema_version": "1.0", "protocol": "evocad-geometry-v2", "campaign_id": "pilot",
+        "source_manifest_sha256": sha256_file(source), "manifest_sha256": "declared",
+        "models": [{"name": "model-a"}], "execution": {"max_attempts": 2},
+    }
+    (campaign / "campaign-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    result = {
+        "run_id": "pilot-model-a", "sample_id": "sample:1", "model": "model-a",
+        "reasoning_effort": "medium", "job_dir": str(job), "status": "failed", "score": 82,
+        "passed": False, "selected_attempt_id": "a001", "candidate_sha256": "candidate",
+        "ground_truth_sha256": sha256_file(truth), "integrity": {"ok": True},
+        "attempts": [{
+            "attempt_id": "a001", "attempt_number": 1, "score": 82, "passed": False,
+            "elapsed_seconds": 12.5, "return_code": 0, "timed_out": False,
+        }],
+    }
+    (campaign / "results.json").write_text(json.dumps([result]), encoding="utf-8")
+    return campaign, source, workspace
+
+
+def _submission(target_id: str) -> dict:
+    return {
+        "target_id": target_id,
+        "attempt_id": "a001",
+        "reviewer": {"id": "reviewer-1", "expertise": "mechanical CAD"},
+        "verifier_decision": "disagree",
+        "strict_pass_assessment": "false_negative",
+        "selected_attempt_assessment": "correct",
+        "ratings": {
+            "evidence_sufficiency": 4, "geometry_fidelity": 5,
+            "verifier_validity": 2, "reflection_quality": 3,
+        },
+        "issue_types": ["verifier_threshold"],
+        "recommended_action": "revise_verifier",
+        "findings": [{
+            "category": "verifier_threshold", "severity": "major", "location": "voxel_iou",
+            "observation": "The threshold rejects an acceptable reconstruction.",
+            "recommendation": "Recalibrate against expert labels.",
+        }],
+        "notes": "Visual evidence supports the candidate.",
+        "duration_seconds": 42,
+        "supersedes_review_id": None,
+    }
+
+
+def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+
+    payload = generate_geometry_review_bundle(campaign, output, source_manifest=source)
+
+    assert payload["campaign"]["campaign_id"] == "pilot"
+    assert payload["source_manifest_available"] is True
+    run = payload["runs"][0]
+    assert run["input_images"] == ["assets/sample-1/model-a/input-01.png"]
+    assert len(run["input_evidence"][0]["sha256"]) == 64
+    assert run["attempts"][0]["reflection"]["failure_owner"] == "drawing"
+    assert run["attempts"][0]["public_events"][0]["text"] == "I will repair it."
+    assert run["attempts"][0]["mcp_events"][0]["status"] == "fail"
+    assert len(run["attempts"][0]["evidence_sha256"]) == 64
+    assert (output / "review-data.json").is_file()
+    assert (output / "app/index.html").is_file()
+    assert payload["review_system"]["render_protocol"]["id"] == "evocad-orthographic-evidence-v1"
+
+
+def test_human_review_ledger_binds_revisions_and_detects_tampering(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    payload = generate_geometry_review_bundle(campaign, output, source_manifest=source)
+    ledger = workspace / "evals/geometry-benchmarks/human-reviews/pilot.jsonl"
+    store = HumanReviewStore(output / "review-data.json", ledger)
+    submission = _submission(payload["runs"][0]["target_id"])
+
+    first = store.append(submission)
+    revision = store.append({**submission, "verifier_decision": "partially_agree", "supersedes_review_id": first["review_id"]})
+
+    response = store.response()
+    assert response["integrity"]["ok"] is True
+    assert response["active_records"] == 1
+    assert response["summary"]["decisions"]["partially_agree"] == 1
+    assert response["summary"]["conflicted_evidence"] == 0
+    assert response["summary"]["rating_means"]["verifier_validity"] == 2.0
+    assert revision["previous_record_sha256"] == first["record_sha256"]
+    lines = ledger.read_text(encoding="utf-8").splitlines()
+    tampered = json.loads(lines[0])
+    tampered["notes"] = "changed"
+    lines[0] = json.dumps(tampered)
+    ledger.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert store.verify()["ok"] is False
+
+
+def test_human_review_rejects_unbound_attempt(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    payload = generate_geometry_review_bundle(campaign, output, source_manifest=source)
+    store = HumanReviewStore(output / "review-data.json", workspace / "reviews.jsonl")
+    submission = _submission(payload["runs"][0]["target_id"])
+    submission["attempt_id"] = "a999"
+
+    with pytest.raises(ValueError, match="Unknown attempt"):
+        store.append(submission)
+
+
+def test_human_review_rejects_changed_visual_evidence(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    payload = generate_geometry_review_bundle(campaign, output, source_manifest=source)
+    store = HumanReviewStore(output / "review-data.json", workspace / "reviews.jsonl")
+    (output / payload["runs"][0]["input_images"][0]).write_bytes(b"changed")
+
+    with pytest.raises(ValueError, match="bundle integrity failed"):
+        store.append(_submission(payload["runs"][0]["target_id"]))
+
+
+def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
+    root = Path(__file__).parents[1] / "apps/geometry-review"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    script = (root / "app.js").read_text(encoding="utf-8")
+    for identifier in ("evidencePanel", "verifierPanel", "reflectionPanel", "mcpPanel", "reviewForm"):
+        assert f'id="{identifier}"' in html
+    assert 'fetch("/api/reviews"' in script
+    assert "supersedes_review_id" in script

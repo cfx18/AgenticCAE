@@ -43,6 +43,9 @@ cad-evoloop-geometry-export = "cad_evoloop.cli:_export_geometry"
 cad-evoloop-geometry-batch = "cad_evoloop.cli:_batch_geometry"
 cad-evoloop-geometry-report = "cad_evoloop.cli:_report_geometry"
 cad-evoloop-geometry-split = "cad_evoloop.cli:_split_geometry"
+cad-evoloop-geometry-review-export = "cad_evoloop.cli:_export_geometry_review"
+cad-evoloop-geometry-review-serve = "cad_evoloop.cli:_serve_geometry_review"
+cad-evoloop-geometry-review-verify = "cad_evoloop.cli:_verify_geometry_reviews"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

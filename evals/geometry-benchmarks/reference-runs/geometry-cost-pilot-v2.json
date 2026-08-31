@@ -130,6 +130,16 @@
     }
   ],
   "ground_truth_path_exposed_to_agent": false,
+  "human_review_workbench": {
+    "schema_version": "1.0",
+    "review_ui_version": "1.0",
+    "bundle_sha256": "e99b80b8e4448d907c46f11837408bdefc59e66988a4b6bb87d4449cd84bd926",
+    "runs": 30,
+    "attempts": 64,
+    "attempts_with_visual_comparison": 58,
+    "review_ledger": "evals/geometry-benchmarks/human-reviews/geometry-cost-pilot-v2.jsonl",
+    "integrity": "verified"
+  },
   "notes": [
     "All 30 runs completed without human intervention and passed ledger integrity verification.",
     "The three models tie on final strict pass rate, but differ substantially in pass@1, runtime, tool failures, and repair gain.",

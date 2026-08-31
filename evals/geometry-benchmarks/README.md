@@ -86,6 +86,30 @@ cad-evoloop geometry-report evals/geometry-benchmarks/batch/geometry-cost-pilot-
   --annotations evals/geometry-benchmarks/annotations/cost-pilot-v2-data-quality.json
 ```
 
+Export the same frozen trajectories for expert review and start the local
+workbench. This does not invoke the agent or AutoCAD:
+
+```powershell
+cad-evoloop geometry-review-export `
+  evals/geometry-benchmarks/batch/geometry-cost-pilot-v2 `
+  --output reports/generated/geometry-cost-pilot-v2/review `
+  --source-manifest .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  --annotations evals/geometry-benchmarks/annotations/cost-pilot-v2-data-quality.json `
+  --render-geometry
+
+cad-evoloop geometry-review-serve reports/generated/geometry-cost-pilot-v2/review `
+  --reviews evals/geometry-benchmarks/human-reviews/geometry-cost-pilot-v2.jsonl
+```
+
+Human reviews distinguish agent geometry/reasoning failures from ambiguous
+inputs, ground-truth defects, verifier metric or threshold defects, alignment,
+export, MCP, harness, and attempt-selection failures. They also record possible
+false positives and false negatives, evidence sufficiency, geometry fidelity,
+verifier validity, reflection quality, recommended disposition, and structured
+findings. The ledger is append-only and hash-chained; revisions retain the
+superseded record. This makes disagreement with the verifier measurable instead
+of silently changing benchmark annotations.
+
 The report writes per-attempt data to `attempts.csv`, per-model aggregates to
 `models.csv` and `summary.json`, optional filtered aggregates to
 `models-primary.csv`, and 1600x900 repair-trajectory and model

@@ -27,6 +27,7 @@ mcp/jobs/
 *.dwl2
 *.err
 *.log
+*.jsonl.lock
 
 # Paper outputs and local experiment exports are regenerated from manifests.
 artifacts/

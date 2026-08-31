@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evocad.dev/schemas/human-geometry-review.schema.json",
+  "title": "EvoCAD Human Geometry Review",
+  "type": "object",
+  "required": [
+    "schema_version", "review_id", "created_at", "binding", "reviewer",
+    "verifier_decision", "strict_pass_assessment", "selected_attempt_assessment",
+    "ratings", "issue_types", "recommended_action", "findings", "notes",
+    "previous_record_sha256", "record_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "review_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "previous_record_sha256": {"type": ["string", "null"]},
+    "record_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "binding": {
+      "type": "object",
+      "required": [
+        "bundle_sha256", "campaign_id", "campaign_manifest_sha256", "protocol",
+        "target_id", "sample_id", "model", "attempt_id", "attempt_evidence_sha256"
+      ]
+    },
+    "reviewer": {
+      "type": "object",
+      "required": ["id", "expertise"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "expertise": {"type": "string", "maxLength": 120}
+      },
+      "additionalProperties": false
+    },
+    "verifier_decision": {"enum": ["agree", "partially_agree", "disagree", "uncertain"]},
+    "strict_pass_assessment": {"enum": ["correct", "false_positive", "false_negative", "uncertain"]},
+    "selected_attempt_assessment": {"enum": ["correct", "incorrect", "uncertain", "not_applicable"]},
+    "ratings": {
+      "type": "object",
+      "required": ["evidence_sufficiency", "geometry_fidelity", "verifier_validity", "reflection_quality"],
+      "additionalProperties": {"type": ["integer", "null"], "minimum": 1, "maximum": 5}
+    },
+    "issue_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+    "recommended_action": {"type": "string"},
+    "findings": {"type": "array", "maxItems": 50, "items": {"type": "object"}},
+    "notes": {"type": "string", "maxLength": 12000},
+    "duration_seconds": {"type": ["number", "null"], "minimum": 0, "maximum": 86400},
+    "supersedes_review_id": {"type": ["string", "null"]}
+  }
+}
