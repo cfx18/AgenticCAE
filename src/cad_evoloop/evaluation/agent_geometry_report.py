@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import csv
 import hashlib
 import json
@@ -162,6 +163,39 @@ def compare_sol_campaigns(
     }
 
 
+def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, Any]:
+    stop_reasons = Counter(str(row.get("stop_reason") or "unknown") for row in results)
+    safety_reasons = {"max_iterations", "job_time_budget", "action_timeout"}
+    censored = [
+        row for row in results
+        if row.get("agent_requested_continue") and row.get("stop_reason") in safety_reasons
+    ]
+    selected_rollback = 0
+    improved = 0
+    attempts = 0
+    for row in results:
+        trajectory = row.get("attempts", [])
+        attempts += len(trajectory)
+        if trajectory and float(row.get("score", 0.0)) > float(trajectory[0].get("score", 0.0)):
+            improved += 1
+        if trajectory and row.get("selected_attempt_id") != trajectory[-1].get("attempt_id"):
+            selected_rollback += 1
+    return {
+        "schema_version": "1.0",
+        "runs": len(results),
+        "stop_reasons": dict(sorted(stop_reasons.items())),
+        "autonomous_stops": stop_reasons.get("agent_stop", 0),
+        "strict_pass_stops": stop_reasons.get("strict_pass", 0),
+        "safety_censored_runs": len(censored),
+        "safety_censored_sample_ids": [row["sample_id"] for row in censored],
+        "runs_improved_over_first_attempt": improved,
+        "best_checkpoint_rollbacks": selected_rollback,
+        "total_attempts": attempts,
+        "mean_attempts": round(attempts / len(results), 3) if results else None,
+        "run_integrity_failures": sum(not row.get("integrity", {}).get("ok", False) for row in results),
+    }
+
+
 def generate_agent_geometry_report(
     campaign_dir: str | Path,
     output_dir: str | Path,
@@ -172,6 +206,8 @@ def generate_agent_geometry_report(
     output_dir = Path(output_dir).resolve()
     materialized = materialize_agent_campaign(campaign_dir)
     summary = generate_geometry_campaign_report(campaign_dir, output_dir)
+    trajectory_summary = summarize_long_horizon_outcomes(materialized["results"])
+    _write_json_atomic(output_dir / "agent-trajectory-summary.json", trajectory_summary)
     comparison = None
     if baseline_dir is not None:
         baseline_results = _read_json(Path(baseline_dir).resolve() / "results.json")
@@ -187,6 +223,7 @@ def generate_agent_geometry_report(
             writer.writerows(rows)
     return {
         "summary": summary,
+        "trajectory_summary": trajectory_summary,
         "comparison": comparison,
         "materialization": materialized["provenance"],
     }
