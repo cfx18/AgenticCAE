@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import threading
+import urllib.request
 
 import pytest
 
@@ -234,6 +236,28 @@ def test_geometry_review_server_rejects_duplicate_listener(tmp_path: Path) -> No
             duplicate.server_close()
     finally:
         first.server_close()
+
+
+def test_geometry_review_server_serves_javascript_with_executable_mime_type(tmp_path: Path) -> None:
+    script_path = tmp_path / "app.js"
+    script_path.write_text("window.reviewLoaded = true;\n", encoding="utf-8")
+    expected = script_path.read_bytes()
+    server = _ReviewServer(
+        ("127.0.0.1", 0), GeometryReviewHandler,
+        app_dir=tmp_path, bundle_dir=tmp_path, store=object(),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        with urllib.request.urlopen(f"http://{host}:{port}/app.js", timeout=5) as response:
+            assert response.headers["Content-Type"] == "application/javascript; charset=utf-8"
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+            assert response.read() == expected
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatch) -> None:

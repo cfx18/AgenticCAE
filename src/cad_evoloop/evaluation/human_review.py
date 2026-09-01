@@ -35,6 +35,24 @@ RATING_FIELDS = {
     "evidence_sufficiency", "geometry_fidelity", "verifier_validity", "reflection_quality",
 }
 
+STATIC_MIME_TYPES = {
+    ".css": "text/css",
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".mjs": "application/javascript",
+    ".stl": "model/stl",
+}
+
+
+def _static_content_type(path: Path) -> str:
+    mime = STATIC_MIME_TYPES.get(path.suffix.casefold())
+    if mime is None:
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if mime.startswith("text/") or mime in {"application/javascript", "application/json"}:
+        return mime + "; charset=utf-8"
+    return mime
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -398,9 +416,8 @@ class GeometryReviewHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         payload = path.read_bytes()
-        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
+        self.send_header("Content-Type", _static_content_type(path))
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
