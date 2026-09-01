@@ -166,10 +166,12 @@ def compare_sol_campaigns(
 def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, Any]:
     stop_reasons = Counter(str(row.get("stop_reason") or "unknown") for row in results)
     safety_reasons = {"max_iterations", "job_time_budget", "action_timeout"}
+    runtime_reasons = {"decision_unavailable", "action_unavailable", "verifier_error"}
     censored = [
         row for row in results
         if row.get("agent_requested_continue") and row.get("stop_reason") in safety_reasons
     ]
+    runtime_censored = [row for row in results if row.get("stop_reason") in runtime_reasons]
     selected_rollback = 0
     improved = 0
     attempts = 0
@@ -209,6 +211,8 @@ def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, 
         "strict_pass_stops": stop_reasons.get("strict_pass", 0),
         "safety_censored_runs": len(censored),
         "safety_censored_sample_ids": [row["sample_id"] for row in censored],
+        "runtime_censored_runs": len(runtime_censored),
+        "runtime_censored_sample_ids": [row["sample_id"] for row in runtime_censored],
         "runs_improved_over_first_attempt": improved,
         "best_checkpoint_rollbacks": selected_rollback,
         "total_attempts": attempts,

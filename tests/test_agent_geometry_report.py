@@ -102,3 +102,19 @@ def test_summarizes_safety_censoring_and_checkpoint_rollback(tmp_path: Path) -> 
         "mean_attempts": 2,
         "safety_censored_runs": 1,
     }]
+
+
+def test_summarizes_unavailable_reflection_as_runtime_censoring(tmp_path: Path) -> None:
+    run = result("sample:2", 99.2, False, tmp_path)
+    run.update({
+        "stop_reason": "decision_unavailable",
+        "agent_requested_continue": False,
+        "integrity": {"ok": True},
+    })
+
+    summary = summarize_long_horizon_outcomes([run])
+
+    assert summary["autonomous_stops"] == 0
+    assert summary["safety_censored_runs"] == 0
+    assert summary["runtime_censored_runs"] == 1
+    assert summary["runtime_censored_sample_ids"] == ["sample:2"]
