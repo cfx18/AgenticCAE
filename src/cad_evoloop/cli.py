@@ -20,6 +20,7 @@ from .evaluation.geometry_campaign import run_geometry_campaign
 from .evaluation.agent_geometry_campaign import run_agent_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
 from .evaluation.geometry_review import generate_geometry_review_bundle
+from .evaluation.agent_geometry_report import generate_agent_geometry_report
 from .evaluation.geometry_split import write_geometry_split
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
 from .paths import project_root
@@ -276,6 +277,18 @@ def _report_geometry() -> None:
     print(json.dumps(result, ensure_ascii=False))
 
 
+def _report_agent_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Generate a durable-agent geometry report")
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path)
+    args = parser.parse_args()
+    result = generate_agent_geometry_report(
+        args.campaign_dir, args.output, baseline_dir=args.baseline,
+    )
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def _split_geometry() -> None:
     parser = argparse.ArgumentParser(description="Create a deterministic geometry benchmark split")
     parser.add_argument("manifest", type=Path)
@@ -363,6 +376,9 @@ def main() -> None:
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
         "agent-geometry-batch": (_batch_agent_geometry, "run geometry through the durable agent"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
+        "agent-geometry-report": (
+            _report_agent_geometry, "materialize and report durable-agent geometry results",
+        ),
         "geometry-split": (_split_geometry, "create a deterministic benchmark split"),
         "geometry-review-export": (_export_geometry_review, "export human-reviewable geometry evidence"),
         "geometry-review-serve": (_serve_geometry_review, "serve the geometry review workbench"),
