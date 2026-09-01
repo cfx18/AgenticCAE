@@ -23,7 +23,11 @@ from cad_evoloop.agent import (
     apply_plan,
 )
 from cad_evoloop.agent.executors import GeometryCampaignExecutor, GeometryCampaignExecutorConfig
-from cad_evoloop.evaluation.geometry_campaign import load_geometry_manifest, slug
+from cad_evoloop.evaluation.geometry_campaign import (
+    DECISION_RETRY_LIMIT,
+    load_geometry_manifest,
+    slug,
+)
 from cad_evoloop.ledger.ledger import sha256_file
 from cad_evoloop.paths import project_root
 
@@ -63,7 +67,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
-        workspace / "evals/geometry-benchmarks/agent-loop-v2.json",
+        workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
     ])
     return {
         path.relative_to(workspace).as_posix(): sha256_file(path)
@@ -160,6 +164,7 @@ def build_agent_campaign_manifest(
             "surface_samples": score_samples,
             "voxel_resolution": voxel_resolution,
             "project_isolation": "one-project-per-sample",
+            "decision_transport_retry_limit": DECISION_RETRY_LIMIT,
         },
         "runtime_environment": runtime_environment,
         "agent_source_hashes": _agent_source_hashes(workspace),

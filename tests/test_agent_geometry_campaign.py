@@ -54,7 +54,7 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
-        workspace / "evals/geometry-benchmarks/agent-loop-v2.json",
+        workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
     ]
     for path in source_files:
         path.parent.mkdir(parents=True, exist_ok=True)

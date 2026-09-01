@@ -73,6 +73,7 @@ def _run_closed_loop_job(
     *,
     decisions: list[str],
     max_iterations: int,
+    decision_failures: list[str] | None = None,
 ) -> dict:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -96,6 +97,7 @@ def _run_closed_loop_job(
         return ["decision", str(final_path)]
 
     pending = list(decisions)
+    pending_failures = list(decision_failures or [])
 
     def run_process(command, *, events_path, stderr_path, **_kwargs):
         events_path.write_text(
@@ -110,6 +112,13 @@ def _run_closed_loop_job(
         if command[0] == "action":
             Path(command[1]).write_bytes(b"dwg")
         else:
+            if pending_failures:
+                failure = pending_failures.pop(0)
+                if failure == "timeout":
+                    return None, True
+                if failure == "invalid_json":
+                    Path(command[1]).write_text("not-json", encoding="utf-8")
+                    return 0, False
             choice = pending.pop(0)
             Path(command[1]).write_text(json.dumps({
                 "schema_version": "1.0",
@@ -200,6 +209,35 @@ def test_max_iterations_is_a_safety_stop_after_agent_feedback(tmp_path, monkeypa
     assert result["agent_requested_continue"] is True
 
 
+@pytest.mark.parametrize(("failure", "expected_timeout"), [
+    ("timeout", True),
+    ("invalid_json", False),
+])
+def test_decision_transport_retry_recovers_without_consuming_geometry_attempt(
+    tmp_path, monkeypatch, failure, expected_timeout,
+) -> None:
+    result = _run_closed_loop_job(
+        tmp_path,
+        monkeypatch,
+        decisions=["stop"],
+        decision_failures=[failure],
+        max_iterations=3,
+    )
+
+    assert len(result["attempts"]) == 1
+    attempt = result["attempts"][0]
+    assert attempt["agent_decision"] == "stop"
+    assert attempt["decision_transport_retries"] == 1
+    assert attempt["decision_recovered"] is True
+    assert attempt["decision_timed_out"] is expected_timeout
+    assert attempt["timed_out"] is False
+    assert [turn["valid"] for turn in attempt["decision_attempts"]] == [False, True]
+    attempt_dir = Path(result["job_dir"]) / "attempts/a001"
+    assert (attempt_dir / "decision-turns/t01/events.jsonl").is_file()
+    assert (attempt_dir / "decision-turns/t02/reflection.json").is_file()
+    assert json.loads((attempt_dir / "reflection.json").read_text())["decision"] == "stop"
+
+
 def test_stage_agent_inputs_excludes_ground_truth(tmp_path) -> None:
     manifest = _manifest(tmp_path)
     job = tmp_path / "job"
@@ -278,7 +316,8 @@ def test_geometry_campaign_dry_run_binds_truth_hash(tmp_path, monkeypatch) -> No
     assert campaign["jobs"][0]["ground_truth_sha256"]
     assert campaign["source_manifest_sha256"]
     assert campaign["protocol"] == "evocad-geometry-v2"
-    assert campaign["agent_loop_protocol"] == "evocad-agent-loop-v2"
+    assert campaign["agent_loop_protocol"] == "evocad-agent-loop-v3"
+    assert campaign["execution"]["decision_transport_retry_limit"] == 2
     assert campaign["execution"]["feedback_turn_required"] is True
     assert campaign["execution"]["agent_controls_continuation"] is True
 

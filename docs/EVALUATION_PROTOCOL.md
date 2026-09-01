@@ -32,7 +32,8 @@ paper test set.
 
 ## Closed Agent Loop
 
-Geometry campaigns use `evocad-agent-loop-v2`. One logical iteration consists
+New geometry campaigns use `evocad-agent-loop-v3`; completed v2 campaigns keep
+their original binding. One logical iteration consists
 of a CAD action, deterministic verification of that exact candidate, and a
 same-thread agent adjudication. The adjudication records failure ownership,
 observed evidence, root causes, whether the current structure can improve, a
@@ -44,8 +45,11 @@ regression does not replace a valid earlier result.
 `max_iterations` is an external safety ceiling, not an agent reasoning budget.
 The agent still receives and adjudicates the verifier result at the ceiling;
 the ledger records both its requested decision and the harness safety stop.
-Strict pass, job time exhaustion, missing adjudication, and the safety ceiling
-are hard stops. Consecutive non-improvement is advisory only.
+Strict pass, job time exhaustion, adjudication unavailable after transport
+retries, and the safety ceiling are hard stops. A timeout, missing response, or
+schema-invalid adjudication is retried twice inside the same geometry attempt;
+each decision turn remains an immutable artifact. Consecutive non-improvement
+is advisory only.
 
 The same adjudication may attribute a defect to the prompt, skill, MCP,
 verifier, harness, or task and record a system-change proposal. Fixed campaigns

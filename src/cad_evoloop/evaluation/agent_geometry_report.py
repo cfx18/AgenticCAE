@@ -12,7 +12,9 @@ from pathlib import Path
 import statistics
 from typing import Any
 
-from .geometry_report import generate_geometry_campaign_report
+from PIL import Image, ImageDraw
+
+from .geometry_report import _font, generate_geometry_campaign_report
 
 
 def _read_json(path: Path) -> Any:
@@ -58,11 +60,16 @@ def materialize_agent_campaign(campaign_dir: str | Path) -> dict[str, Any]:
         raise ValueError("Agent campaign contains duplicate sample results")
     results.sort(key=lambda row: order[row["sample_id"]])
 
+    loop_protocols = {
+        row.get("agent_loop_protocol") for row in results if row.get("agent_loop_protocol")
+    }
+    if len(loop_protocols) > 1:
+        raise ValueError("Agent campaign mixes agent-loop protocols")
     compatibility_manifest = {
         "schema_version": "1.0",
         "protocol": "evocad-geometry-v2",
         "agent_protocol": agent_manifest["protocol"],
-        "agent_loop_protocol": "evocad-agent-loop-v2",
+        "agent_loop_protocol": next(iter(loop_protocols), "evocad-agent-loop-v2"),
         "agent_condition": agent_manifest["agent_condition"],
         "campaign_id": agent_manifest["campaign_id"],
         "source_manifest_sha256": agent_manifest["source_manifest_sha256"],
@@ -86,6 +93,10 @@ def materialize_agent_campaign(campaign_dir: str | Path) -> dict[str, Any]:
         "agent_results_sha256": _sha256(agent_results_path),
         "plan_sha256": _sha256(plan_path),
         "report_source_sha256": _sha256(Path(__file__).resolve()),
+        "report_source_hashes": {
+            "agent_geometry_report.py": _sha256(Path(__file__).resolve()),
+            "geometry_report.py": _sha256(Path(__file__).with_name("geometry_report.py")),
+        },
     }
     _write_json_atomic(campaign_dir / "report-materialization.json", provenance)
     return {"manifest": compatibility_manifest, "results": results, "provenance": provenance}
@@ -226,6 +237,152 @@ def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, 
     }
 
 
+def render_agent_evaluation_figure(
+    results: list[dict[str, Any]],
+    campaign_summary: dict[str, Any],
+    trajectory_summary: dict[str, Any],
+) -> Image.Image:
+    """Render the fixed-model closed-loop result as a paper-ready four-panel figure."""
+    width, height = 1800, 1100
+    image = Image.new("RGB", (width, height), "#FFFFFF")
+    draw = ImageDraw.Draw(image)
+    title_font = _font(38, bold=True)
+    panel_font = _font(23, bold=True)
+    metric_font = _font(32, bold=True)
+    body_font = _font(17)
+    small_font = _font(14)
+    colors = {
+        "ink": "#182126", "muted": "#5C6770", "grid": "#DDE3E6",
+        "teal": "#087F8C", "orange": "#D96C06", "green": "#25834A",
+        "red": "#B43A33", "gray": "#98A2A8", "light": "#EEF2F3",
+    }
+
+    draw.text((74, 40), "EvoCAD Closed-Loop Geometry Evaluation", fill=colors["ink"], font=title_font)
+    draw.text(
+        (76, 92),
+        f"Fixed model: gpt-5.6-sol  |  frozen dev+validation selection  |  "
+        f"n={campaign_summary['runs']}  |  strict geometry protocol",
+        fill=colors["muted"], font=body_font,
+    )
+    draw.line((74, 132, 1726, 132), fill=colors["ink"], width=2)
+    draw.line((880, 170, 880, 1010), fill=colors["grid"], width=2)
+    draw.line((74, 600, 1726, 600), fill=colors["grid"], width=2)
+
+    # A. Closed-loop recovery headline.
+    draw.text((76, 172), "A  Closed-loop recovery", fill=colors["ink"], font=panel_font)
+    runs = max(1, int(campaign_summary["runs"]))
+    pass1 = int(campaign_summary["pass_at_1"])
+    final_pass = int(campaign_summary["strict_passes"])
+    bar_left, bar_right = 104, 790
+    bar_width = bar_right - bar_left
+    rows = [
+        ("Pass@1", pass1, colors["gray"]),
+        ("Final strict", final_pass, colors["green"]),
+    ]
+    for index, (label, value, color) in enumerate(rows):
+        y = 262 + index * 118
+        draw.text((104, y - 35), label, fill=colors["ink"], font=body_font)
+        draw.rounded_rectangle((bar_left, y, bar_right, y + 48), radius=5, fill=colors["light"])
+        draw.rounded_rectangle(
+            (bar_left, y, bar_left + bar_width * value / runs, y + 48), radius=5, fill=color,
+        )
+        draw.text(
+            (bar_right - 170, y + 7), f"{value}/{runs}  {100 * value / runs:.1f}%",
+            fill=colors["ink"], font=body_font,
+        )
+    recovered = final_pass - pass1
+    draw.text((104, 507), f"+{recovered} strict recoveries", fill=colors["green"], font=metric_font)
+    draw.text(
+        (443, 518),
+        f"mean score {campaign_summary['first_attempt_mean']:.2f} -> "
+        f"{campaign_summary['selected_mean']:.2f}",
+        fill=colors["muted"], font=body_font,
+    )
+
+    # B. Every sample: first score versus selected checkpoint.
+    draw.text((920, 172), "B  Feedback recovery by sample", fill=colors["ink"], font=panel_font)
+    left, top, right, bottom = 980, 238, 1665, 548
+    for tick in range(0, 101, 20):
+        x = left + (right - left) * tick / 100
+        y = bottom - (bottom - top) * tick / 100
+        draw.line((x, top, x, bottom), fill=colors["grid"], width=1)
+        draw.line((left, y, right, y), fill=colors["grid"], width=1)
+        draw.text((x - 10, bottom + 12), str(tick), fill=colors["muted"], font=small_font)
+        draw.text((left - 36, y - 8), str(tick), fill=colors["muted"], font=small_font)
+    draw.line((left, bottom, right, top), fill=colors["gray"], width=2)
+    for result in results:
+        attempts = result.get("attempts", [])
+        if not attempts:
+            continue
+        first = float(attempts[0].get("score", 0.0))
+        selected = float(result.get("score", 0.0))
+        x = left + (right - left) * first / 100
+        y = bottom - (bottom - top) * selected / 100
+        color = colors["orange"] if result["sample_id"].startswith("omnimech:") else colors["teal"]
+        radius = 7 if selected > first + 0.01 else 5
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color, outline="#FFFFFF", width=2)
+    draw.text((1210, 575), "First-attempt score", fill=colors["muted"], font=small_font)
+    draw.text((980, 208), "Selected checkpoint score", fill=colors["muted"], font=small_font)
+    draw.ellipse((1450, 185, 1464, 199), fill=colors["teal"])
+    draw.text((1471, 184), "Ortho2CAD", fill=colors["muted"], font=small_font)
+    draw.ellipse((1570, 185, 1584, 199), fill=colors["orange"])
+    draw.text((1591, 184), "OmniMech", fill=colors["muted"], font=small_font)
+
+    # C. Stopping semantics, separating agent choice from censoring.
+    draw.text((76, 636), "C  Why trajectories stopped", fill=colors["ink"], font=panel_font)
+    stop_order = [
+        ("Strict pass", "strict_pass", colors["green"]),
+        ("Agent stop", "agent_stop", colors["teal"]),
+        ("Safety ceiling", "max_iterations", colors["orange"]),
+        ("Runtime censor", "decision_unavailable", colors["red"]),
+    ]
+    maximum = max(1, max(trajectory_summary["stop_reasons"].values()))
+    for index, (label, key, color) in enumerate(stop_order):
+        value = int(trajectory_summary["stop_reasons"].get(key, 0))
+        y = 714 + index * 66
+        draw.text((104, y), label, fill=colors["ink"], font=body_font)
+        draw.rectangle((280, y + 2, 760, y + 31), fill=colors["light"])
+        draw.rectangle((280, y + 2, 280 + 480 * value / maximum, y + 31), fill=color)
+        draw.text((774, y + 4), str(value), fill=colors["ink"], font=body_font)
+    draw.text(
+        (104, 990),
+        "Agent stop is a model decision; safety/runtime censoring is reported separately.",
+        fill=colors["muted"], font=small_font,
+    )
+
+    # D. Dataset stratification exposes the harder mechanical subset.
+    draw.text((920, 636), "D  Dataset stratification", fill=colors["ink"], font=panel_font)
+    datasets = trajectory_summary.get("by_dataset", [])
+    chart_left, chart_right = 1185, 1670
+    for tick in range(0, 101, 20):
+        x = chart_left + (chart_right - chart_left) * tick / 100
+        draw.line((x, 704, x, 940), fill=colors["grid"], width=1)
+        draw.text((x - 10, 951), str(tick), fill=colors["muted"], font=small_font)
+    for index, dataset in enumerate(datasets):
+        name = dataset["dataset"]
+        subset = [row for row in results if row["sample_id"].startswith(name + ":")]
+        first_passes = sum(bool(row.get("attempts") and row["attempts"][0].get("passed")) for row in subset)
+        first_rate = 100 * first_passes / max(1, len(subset))
+        final_rate = float(dataset["strict_pass_rate"])
+        y = 724 + index * 116
+        draw.text((936, y + 22), f"{name}  n={len(subset)}", fill=colors["ink"], font=body_font)
+        draw.rectangle((chart_left, y, chart_left + (chart_right - chart_left) * first_rate / 100, y + 28), fill=colors["gray"])
+        draw.rectangle((chart_left, y + 39, chart_left + (chart_right - chart_left) * final_rate / 100, y + 67), fill=colors["teal"] if name == "ortho2cad" else colors["orange"])
+        draw.text((chart_right + 12, y + 4), f"{first_rate:.1f}%", fill=colors["muted"], font=small_font)
+        draw.text((chart_right + 12, y + 43), f"{final_rate:.1f}%", fill=colors["ink"], font=small_font)
+    draw.rectangle((1185, 985, 1203, 1003), fill=colors["gray"])
+    draw.text((1211, 984), "Pass@1", fill=colors["muted"], font=small_font)
+    draw.rectangle((1290, 985, 1308, 1003), fill=colors["teal"])
+    draw.text((1316, 984), "Final strict", fill=colors["muted"], font=small_font)
+
+    draw.text(
+        (76, 1060),
+        "Selected checkpoint preserves the best scorable candidate. One v2 run was runtime-censored; v3 adds decision transport retries.",
+        fill=colors["muted"], font=small_font,
+    )
+    return image
+
+
 def generate_agent_geometry_report(
     campaign_dir: str | Path,
     output_dir: str | Path,
@@ -238,6 +395,17 @@ def generate_agent_geometry_report(
     summary = generate_geometry_campaign_report(campaign_dir, output_dir)
     trajectory_summary = summarize_long_horizon_outcomes(materialized["results"])
     _write_json_atomic(output_dir / "agent-trajectory-summary.json", trajectory_summary)
+    render_agent_evaluation_figure(
+        materialized["results"], summary, trajectory_summary,
+    ).save(output_dir / "agent-evaluation.png")
+    with (output_dir / "report.md").open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\n## Agent loop outcomes\n\n"
+            "Fixed-model loop evaluation with autonomous stopping and separate safety/runtime "
+            "censoring. The v2 campaign remains immutable; v3 adds decision transport retries "
+            "after observing one censored reflection turn.\n\n"
+            "![Agent loop evaluation](agent-evaluation.png)\n"
+        )
     comparison = None
     if baseline_dir is not None:
         baseline_results = _read_json(Path(baseline_dir).resolve() / "results.json")

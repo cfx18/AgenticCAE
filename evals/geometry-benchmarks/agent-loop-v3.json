@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "protocol_id": "evocad-agent-loop-v3",
+  "iteration": [
+    "agent_cad_action",
+    "harness_geometry_verification",
+    "same_thread_agent_adjudication",
+    "agent_continue_or_stop_decision"
+  ],
+  "continuation_policy": {
+    "controller": "agent",
+    "continue_requires": [
+      "can_improve is true",
+      "decision is continue",
+      "at least one concrete geometry or recovery action is recorded"
+    ],
+    "system_change_policy": "record a proposal during adjudication; evaluate it outside the fixed sample run",
+    "stagnation": "advisory_only"
+  },
+  "decision_transport": {
+    "retry_limit": 2,
+    "retry_consumes_geometry_iteration": false,
+    "retry_triggers": [
+      "process timeout",
+      "nonzero or missing response",
+      "invalid JSON",
+      "decision schema violation"
+    ],
+    "evidence_policy": "preserve every decision turn and materialize the accepted response as canonical reflection"
+  },
+  "hard_stops": [
+    "strict_pass",
+    "job_time_budget",
+    "decision_unavailable_after_retries",
+    "max_iterations"
+  ],
+  "safety": {
+    "max_iterations_is_reasoning_limit": false,
+    "feedback_required_at_safety_ceiling": true,
+    "record_agent_intent_when_overridden": true,
+    "default_max_iterations": 12
+  },
+  "checkpoint_policy": {
+    "select_best_scorable_candidate": true,
+    "invalid_candidate_cannot_replace_best": true,
+    "repair_may_recover_from_previous_best": true
+  },
+  "decision_schema": "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json"
+}

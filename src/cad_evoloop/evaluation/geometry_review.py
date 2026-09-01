@@ -70,7 +70,9 @@ def _copy_asset(source: Path, assets: Path, name: str) -> str | None:
     return "assets/" + destination.relative_to(assets).as_posix()
 
 
-def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
+def _snapshot_review_system(
+    output_dir: Path, agent_loop_protocol: str | None,
+) -> dict[str, Any]:
     implementation_root = Path(__file__).resolve().parents[3]
     app_sources = [
         (implementation_root / "apps/geometry-review/index.html", Path("index.html")),
@@ -105,12 +107,16 @@ def _snapshot_review_system(output_dir: Path) -> dict[str, Any]:
             Path("vendor/README.md"),
         ),
     ]
+    loop_protocol_file = {
+        "evocad-agent-loop-v2": "agent-loop-v2.json",
+        "evocad-agent-loop-v3": "agent-loop-v3.json",
+    }.get(agent_loop_protocol, "agent-loop-v3.json")
     source_files = [
         Path(__file__).resolve(),
         Path(__file__).with_name("human_review.py").resolve(),
         (Path(__file__).parent / "schemas/human-geometry-review.schema.json").resolve(),
         (Path(__file__).parent / "schemas/geometry-agent-decision.schema.json").resolve(),
-        (implementation_root / "evals/geometry-benchmarks/agent-loop-v2.json").resolve(),
+        (implementation_root / f"evals/geometry-benchmarks/{loop_protocol_file}").resolve(),
         (implementation_root / "evals/geometry-benchmarks/prompts/adjudicate.md").resolve(),
     ]
 
@@ -322,7 +328,7 @@ def generate_geometry_review_bundle(
     annotation_rows = annotations.get("samples", {}) if isinstance(annotations, dict) else {}
     assets = output_dir / "assets"
     assets.mkdir(parents=True, exist_ok=True)
-    review_system = _snapshot_review_system(output_dir)
+    review_system = _snapshot_review_system(output_dir, manifest.get("agent_loop_protocol"))
     runs = []
     for result in results:
         job_dir = Path(result["job_dir"]).resolve()
@@ -432,7 +438,9 @@ def generate_geometry_review_bundle(
                 **{key: attempt_result.get(key) for key in (
                     "attempt_id", "attempt_number", "elapsed_seconds", "return_code",
                     "timed_out", "action_timed_out", "decision_timed_out",
-                    "decision_return_code", "score", "passed", "thread_id", "usage",
+                    "decision_return_code", "decision_transport_retries",
+                    "decision_recovered", "decision_attempts", "score", "passed",
+                    "thread_id", "usage",
                     "action_usage", "reflection_usage", "errors", "agent_decision",
                     "decision_reason", "can_improve", "stagnation_advisory",
                     "safety_stop_reason",

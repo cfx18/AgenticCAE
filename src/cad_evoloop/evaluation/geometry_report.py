@@ -51,6 +51,10 @@ def geometry_report_rows(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "run_stop_reason": result.get("stop_reason"),
                 "elapsed_seconds": float(attempt["elapsed_seconds"]),
                 "timed_out": bool(attempt.get("timed_out")),
+                "decision_transport_retries": int(
+                    attempt.get("decision_transport_retries", 0) or 0
+                ),
+                "decision_recovered": bool(attempt.get("decision_recovered")),
                 "codex_error_events": len(attempt.get("errors", [])),
                 "input_tokens": int(attempt.get("usage", {}).get("input_tokens", 0) or 0),
                 "cached_input_tokens": int(
@@ -132,6 +136,10 @@ def _run_metrics(result: dict[str, Any]) -> dict[str, Any]:
         "attempts": len(attempts),
         "elapsed_seconds": round(sum(float(item.get("elapsed_seconds", 0)) for item in attempts), 3),
         "timed_out_attempts": sum(bool(item.get("timed_out")) for item in attempts),
+        "decision_transport_retries": sum(
+            int(item.get("decision_transport_retries", 0) or 0) for item in attempts
+        ),
+        "recovered_decisions": sum(bool(item.get("decision_recovered")) for item in attempts),
         "codex_error_events": sum(len(item.get("errors", [])) for item in attempts),
         "verifier_errors": 0,
     }
@@ -194,7 +202,8 @@ def summarize_models(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 for field in (
                     "input_tokens", "cached_input_tokens", "output_tokens",
                     "reasoning_output_tokens", "timed_out_attempts", "codex_error_events",
-                    "verifier_errors", "mcp_tool_calls", "mcp_failed_calls",
+                    "decision_transport_retries", "recovered_decisions", "verifier_errors",
+                    "mcp_tool_calls", "mcp_failed_calls",
                     "core_job_failures", "core_job_timeouts",
                 )
             },
@@ -415,6 +424,8 @@ def render_model_comparison(summary: dict[str, Any]) -> Image.Image:
             f"{model['mean_elapsed_seconds'] / 60:.1f} min/run",
             f"{model['output_tokens'] / max(model['runs'], 1) / 1000:.1f}k output tok/run",
             f"{model['timed_out_attempts']} agent timeouts",
+            f"{model['decision_transport_retries']} decision retries / "
+            f"{model['recovered_decisions']} recovered",
             f"{model['mcp_failed_calls']} MCP / {model['core_job_failures']} core failures",
         ]
         for line_index, line in enumerate(details):
@@ -495,7 +506,8 @@ def generate_geometry_campaign_report(
             "sample_id", "model", "attempt_id", "attempt_number", "score", "passed",
             "selected", "agent_decision", "can_improve", "stagnation_advisory",
             "safety_stop_reason", "run_stop_reason", "elapsed_seconds", "timed_out",
-            "codex_error_events", "input_tokens",
+            "decision_transport_retries", "decision_recovered", "codex_error_events",
+            "input_tokens",
             "cached_input_tokens", "output_tokens", "reasoning_output_tokens",
         ]
         writer = csv.DictWriter(stream, fieldnames=fieldnames)

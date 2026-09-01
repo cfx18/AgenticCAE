@@ -125,6 +125,7 @@ def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None
     assert run["attempts"][0]["public_events"][0]["text"] == "I will repair it."
     assert run["attempts"][0]["public_events"][1]["phase"] == "feedback"
     assert run["attempts"][0]["agent_decision"] == "continue"
+    assert run["attempts"][0]["decision_transport_retries"] is None
     assert run["attempts"][0]["safety_stop_reason"] == "max_iterations"
     assert run["attempts"][0]["mcp_events"][0]["status"] == "fail"
     assert len(run["attempts"][0]["evidence_sha256"]) == 64
@@ -196,7 +197,7 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=7"' in html
+    assert 'src="app.js?v=8"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
     three_module = (root / "vendor/three/three.module.min.js").read_text(encoding="utf-8")
@@ -216,6 +217,7 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert 'cursor: grab' in styles
     assert 'pointer-events: auto' in styles
     assert 'import("./geometry-viewer.js?v=7")' in script
+    assert "Decision transport" in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer
 

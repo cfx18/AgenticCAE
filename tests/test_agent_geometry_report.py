@@ -6,6 +6,7 @@ from pathlib import Path
 from cad_evoloop.evaluation.agent_geometry_report import (
     compare_sol_campaigns,
     materialize_agent_campaign,
+    render_agent_evaluation_figure,
     summarize_long_horizon_outcomes,
 )
 
@@ -59,6 +60,9 @@ def test_materializes_results_in_frozen_plan_order(tmp_path: Path) -> None:
 
     assert [row["sample_id"] for row in value["results"]] == ["sample:2", "sample:1"]
     assert value["provenance"]["complete"] is True
+    assert set(value["provenance"]["report_source_hashes"]) == {
+        "agent_geometry_report.py", "geometry_report.py",
+    }
     assert json.loads((campaign / "campaign-manifest.json").read_text())["models"][0]["name"] == "gpt-5.6-sol"
 
 
@@ -118,3 +122,22 @@ def test_summarizes_unavailable_reflection_as_runtime_censoring(tmp_path: Path) 
     assert summary["safety_censored_runs"] == 0
     assert summary["runtime_censored_runs"] == 1
     assert summary["runtime_censored_sample_ids"] == ["sample:2"]
+
+
+def test_renders_fixed_model_agent_evaluation_figure(tmp_path: Path) -> None:
+    first = result("omnimech:1", 60, False, tmp_path)
+    first["stop_reason"] = "agent_stop"
+    first["integrity"] = {"ok": True}
+    second = result("ortho2cad:1", 100, True, tmp_path)
+    second["stop_reason"] = "strict_pass"
+    second["integrity"] = {"ok": True}
+    results = [first, second]
+    trajectory = summarize_long_horizon_outcomes(results)
+    campaign = {
+        "runs": 2, "pass_at_1": 1, "strict_passes": 1,
+        "first_attempt_mean": 80.0, "selected_mean": 80.0,
+    }
+
+    image = render_agent_evaluation_figure(results, campaign, trajectory)
+
+    assert image.size == (1800, 1100)

@@ -28,7 +28,8 @@ from .geometry_score import (
 
 DEFAULT_MODEL = "gpt-5.6-sol"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-AGENT_LOOP_PROTOCOL_ID = "evocad-agent-loop-v2"
+AGENT_LOOP_PROTOCOL_ID = "evocad-agent-loop-v3"
+DECISION_RETRY_LIMIT = 2
 
 
 def slug(value: str) -> str:
@@ -177,7 +178,7 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "evals/geometry-benchmarks/prompts/modeling.md",
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
         workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
-        workspace / "evals/geometry-benchmarks/agent-loop-v2.json",
+        workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
         workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
     ]
@@ -472,6 +473,149 @@ def _run_codex_process(
     return return_code, timed_out
 
 
+def _run_decision_with_retries(
+    *,
+    executable: str,
+    model: str,
+    effort: str,
+    job_dir: Path,
+    attempt_dir: Path,
+    thread_id: str,
+    prompt: str,
+    output_schema: Path,
+    reflection_path: Path,
+    events_path: Path,
+    stderr_path: Path,
+    turn_timeout: int,
+    job_started: float,
+    job_time_budget: int,
+    retry_limit: int = DECISION_RETRY_LIMIT,
+) -> dict[str, Any]:
+    """Retry feedback transport/schema failures without consuming a CAD attempt."""
+    traces = []
+    event_values = []
+    turn_event_paths = []
+    turn_stderr_paths = []
+    selected_output = None
+    decision = None
+
+    for turn_number in range(1, retry_limit + 2):
+        remaining = job_time_budget - (time.perf_counter() - job_started)
+        if remaining <= 1:
+            traces.append({
+                "turn": turn_number,
+                "return_code": None,
+                "timed_out": False,
+                "valid": False,
+                "error": "Job time budget exhausted before decision retry",
+            })
+            break
+        turn_dir = attempt_dir / "decision-turns" / f"t{turn_number:02d}"
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        output_path = turn_dir / "reflection.json"
+        turn_events = turn_dir / "events.jsonl"
+        turn_stderr = turn_dir / "stderr.log"
+        retry_note = ""
+        if turn_number > 1:
+            retry_note = (
+                "\n\nRUNTIME RETRY: The previous decision response was unavailable or invalid. "
+                "Re-evaluate the same feedback packet and return only a valid schema-conforming "
+                "decision. Do not perform CAD operations in this turn."
+            )
+        command = codex_resume_command(
+            executable,
+            model,
+            effort,
+            job_dir,
+            thread_id,
+            prompt + retry_note,
+            output_path,
+            with_autocad=False,
+            output_schema=output_schema,
+        )
+        return_code, timed_out = _run_codex_process(
+            command,
+            cwd=job_dir,
+            events_path=turn_events,
+            stderr_path=turn_stderr,
+            timeout=remaining_attempt_timeout(turn_timeout, remaining),
+        )
+        event_data = _read_codex_events(turn_events)
+        event_values.append(event_data)
+        turn_event_paths.append(turn_events)
+        turn_stderr_paths.append(turn_stderr)
+        error = None
+        value = None
+        try:
+            value = json.loads(output_path.read_text(encoding="utf-8"))
+            _validate_agent_decision(value)
+        except Exception as exc:
+            error = repr(exc)
+        if error is None and (timed_out or return_code != 0):
+            error = (
+                "Decision transport timed out"
+                if timed_out else f"Decision transport returned {return_code}"
+            )
+        trace = {
+            "turn": turn_number,
+            "return_code": return_code,
+            "timed_out": timed_out,
+            "valid": value is not None and error is None,
+            "error": error,
+            "usage": event_data.get("usage") or {},
+            "event_errors": event_data.get("errors") or [],
+            "artifact_dir": turn_dir.relative_to(attempt_dir).as_posix(),
+        }
+        traces.append(trace)
+        if trace["valid"]:
+            decision = value
+            selected_output = output_path
+            break
+
+    available_outputs = [
+        attempt_dir / trace["artifact_dir"] / "reflection.json"
+        for trace in traces if trace.get("artifact_dir")
+    ]
+    source_output = selected_output or next(
+        (path for path in reversed(available_outputs) if path.is_file()), None,
+    )
+    if source_output is not None:
+        shutil.copy2(source_output, reflection_path)
+    with events_path.open("w", encoding="utf-8", newline="\n") as stream:
+        for path in turn_event_paths:
+            if path.is_file():
+                stream.write(path.read_text(encoding="utf-8", errors="replace"))
+    with stderr_path.open("w", encoding="utf-8", newline="\n") as stream:
+        for index, path in enumerate(turn_stderr_paths, 1):
+            if path.is_file():
+                stream.write(f"--- decision turn {index} ---\n")
+                stream.write(path.read_text(encoding="utf-8", errors="replace"))
+                stream.write("\n")
+
+    return {
+        "decision": decision,
+        "return_code": traces[-1].get("return_code") if traces else None,
+        "timed_out": any(trace.get("timed_out") for trace in traces),
+        "recovered": decision is not None and len(traces) > 1,
+        "error": None if decision is not None else (traces[-1].get("error") if traces else None),
+        "event_data": {
+            "usage": _merge_usage(*(value.get("usage") or {} for value in event_values)),
+            "errors": [
+                error
+                for value in event_values
+                for error in (value.get("errors") or [])
+            ],
+        },
+        "traces": traces,
+        "artifact_paths": [
+            path
+            for trace in traces if trace.get("artifact_dir")
+            for path in (attempt_dir / trace["artifact_dir"]).iterdir()
+            if path.is_file()
+        ],
+    }
+
+
 def run_geometry_job(
     *,
     manifest_path: Path,
@@ -585,7 +729,8 @@ def run_geometry_job(
                 executable, model, effort, job_dir, thread_id, prompt,
                 final_path, with_autocad=True, audit_path=audit_path,
             )
-        feedback_reserve = min(180, max(30, timeout // 4))
+        decision_turn_timeout = min(180, max(30, timeout // 4))
+        feedback_reserve = decision_turn_timeout * (DECISION_RETRY_LIMIT + 1)
         attempt_timeout = remaining_attempt_timeout(
             timeout,
             job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
@@ -698,34 +843,34 @@ def run_geometry_job(
                 action_return_code=return_code,
                 diagnostics=diagnostics,
             )
-            decision_command = codex_resume_command(
-                executable, model, effort, job_dir, thread_id, decision_prompt,
-                reflection_path,
-                with_autocad=False,
+            decision_run = _run_decision_with_retries(
+                executable=executable,
+                model=model,
+                effort=effort,
+                job_dir=job_dir,
+                attempt_dir=attempt_dir,
+                thread_id=thread_id,
+                prompt=decision_prompt,
                 output_schema=(
                     workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json"
                 ),
-            )
-            decision_timeout = remaining_attempt_timeout(
-                min(timeout, feedback_reserve),
-                job_time_budget - elapsed_before_decision,
-            )
-            decision_return_code, decision_timed_out = _run_codex_process(
-                decision_command,
-                cwd=job_dir,
+                reflection_path=reflection_path,
                 events_path=reflection_events_path,
                 stderr_path=reflection_stderr_path,
-                timeout=decision_timeout,
+                turn_timeout=decision_turn_timeout,
+                job_started=job_started,
+                job_time_budget=job_time_budget,
             )
-            decision_event_data = _read_codex_events(reflection_events_path)
-            try:
-                decision = json.loads(reflection_path.read_text(encoding="utf-8"))
-                _validate_agent_decision(decision)
-            except Exception as exc:
-                decision = None
-                decision_error = repr(exc)
+            decision = decision_run["decision"]
+            decision_error = decision_run["error"]
+            decision_return_code = decision_run["return_code"]
+            decision_timed_out = decision_run["timed_out"]
+            decision_event_data = decision_run["event_data"]
         else:
             decision_error = "The action turn did not produce a resumable Codex thread_id"
+            decision_run = {
+                "traces": [], "recovered": False, "artifact_paths": [],
+            }
 
         for path, role in (
             (reflection_path, "reflection"),
@@ -735,6 +880,8 @@ def run_geometry_job(
         ):
             if path.is_file():
                 ledger.add_artifact(run_dir, attempt_id, path, role=role)
+        for path in decision_run["artifact_paths"]:
+            ledger.add_artifact(run_dir, attempt_id, path, role="reflection-turn")
         result = ledger.finish(run_dir, attempt_id, verdict_path)
         elapsed = time.perf_counter() - job_started
         safety_reason = safety_stop_reason(
@@ -751,10 +898,13 @@ def run_geometry_job(
             "attempt_number": number,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "return_code": return_code,
-            "timed_out": action_timed_out or decision_timed_out,
+            "timed_out": action_timed_out or (decision is None and decision_timed_out),
             "action_timed_out": action_timed_out,
             "decision_timed_out": decision_timed_out,
             "decision_return_code": decision_return_code,
+            "decision_transport_retries": max(0, len(decision_run["traces"]) - 1),
+            "decision_recovered": decision_run["recovered"],
+            "decision_attempts": decision_run["traces"],
             "score": score,
             "passed": verdict["passed"],
             "verdict": str(verdict_path),
@@ -856,6 +1006,7 @@ def build_geometry_campaign_manifest(
             "feedback_turn_required": True,
             "same_thread_feedback": True,
             "agent_controls_continuation": True,
+            "decision_transport_retry_limit": DECISION_RETRY_LIMIT,
             "job_time_budget_seconds": job_time_budget,
             "surface_samples": score_samples,
             "voxel_resolution": voxel_resolution,
