@@ -54,3 +54,34 @@ Provider smoke:
 - input/output tokens: 17,598 / 15;
 - errors: none;
 - local evidence: `.local/provider-smoke/f5b9095c395e479689218186f0f39691/`.
+
+## 2026-09-02: Campaign V1 Infrastructure Preflight Failure
+
+The first real job (`omnimech:4`) produced a native candidate and verifier-ready
+STL, but the verifier process lacked the optional geometry dependencies. The
+recorded result is therefore an infrastructure failure, not a model score:
+
+- campaign: `agent-geometry-30-sol-v1`;
+- attempt: `omnimech:4/a001`;
+- CAD action return code: 0;
+- candidate and mesh existed: yes;
+- verifier error: missing `geometry` extra;
+- reflection owner: `verifier` with confidence `0.99`;
+- reflection decision: stop CAD iteration and repair the evaluation environment;
+- durable project integrity: passed, 10 events and 2 verified artifacts.
+
+After installing the verifier dependencies, the unchanged candidate rescored to
+`59.12` with 100% metric coverage. This confirms the recorded zero was a false
+negative caused by evaluation infrastructure. The v1 directory remains immutable
+evidence and is excluded from capability comparisons.
+
+Corrective changes before the formal run:
+
+- add dependency and Codex CLI preflight before any model call;
+- bind Python, platform, Codex, OCP, NumPy, SciPy, and Trimesh versions into the
+  campaign manifest;
+- remove unused CadQuery from the verifier extra and constrain the compatible
+  stack to NumPy `<2` and OCP `<7.9`;
+- start the formal evaluation under a new campaign identifier.
+
+Formal replacement campaign: `agent-geometry-30-sol-v2`.

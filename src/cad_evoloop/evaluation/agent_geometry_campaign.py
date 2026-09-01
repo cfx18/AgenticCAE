@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from importlib import metadata
 import json
 import os
 from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
 from typing import Any
 
 from cad_evoloop.agent import (
@@ -25,6 +30,7 @@ from cad_evoloop.paths import project_root
 
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
 AGENT_CONDITION = "durable-kernel-compat-v1"
+GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
 
 
 def _canonical_hash(value: dict[str, Any], excluded: str) -> str:
@@ -66,6 +72,55 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
     }
 
 
+def collect_runtime_environment(executable: str | None = None) -> dict[str, Any]:
+    """Capture the runtime identity that can change an evaluation result."""
+    packages = {}
+    for distribution in GEOMETRY_DISTRIBUTIONS:
+        try:
+            packages[distribution] = metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            packages[distribution] = None
+    codex_command = executable or shutil.which("codex") or "codex"
+    try:
+        completed = subprocess.run(
+            [codex_command, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        codex_version = (completed.stdout or completed.stderr).strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        codex_version = None
+    return {
+        "python": {
+            "version": platform.python_version(),
+            "implementation": platform.python_implementation(),
+            "executable": Path(sys.executable).resolve().as_posix(),
+        },
+        "platform": platform.platform(),
+        "packages": packages,
+        "codex": {"command": codex_command, "version": codex_version},
+    }
+
+
+def require_geometry_environment(environment: dict[str, Any]) -> None:
+    missing = [
+        name for name, version in environment["packages"].items() if version is None
+    ]
+    if missing:
+        raise RuntimeError(
+            "Geometry verifier preflight failed; missing distributions: "
+            + ", ".join(missing)
+            + ". Install with `pip install -e .[geometry]`."
+        )
+    from cad_evoloop.evaluation.geometry_score import _dependencies
+
+    _dependencies()
+    if environment["codex"]["version"] is None:
+        raise RuntimeError("Codex CLI preflight failed; `codex --version` did not succeed")
+
+
 def build_agent_campaign_manifest(
     *,
     manifest_path: Path,
@@ -80,6 +135,7 @@ def build_agent_campaign_manifest(
     job_time_budget: int,
     score_samples: int,
     voxel_resolution: int,
+    runtime_environment: dict[str, Any],
 ) -> dict[str, Any]:
     workspace = project_root()
     value = {
@@ -105,6 +161,7 @@ def build_agent_campaign_manifest(
             "voxel_resolution": voxel_resolution,
             "project_isolation": "one-project-per-sample",
         },
+        "runtime_environment": runtime_environment,
         "agent_source_hashes": _agent_source_hashes(workspace),
     }
     value["campaign_manifest_sha256"] = _canonical_hash(value, "campaign_manifest_sha256")
@@ -200,6 +257,9 @@ def run_agent_geometry_campaign(
 ) -> dict[str, Any]:
     if max_jobs is not None and max_jobs < 1:
         raise ValueError("max_jobs must be positive")
+    runtime_environment = collect_runtime_environment(executable)
+    if not dry_run:
+        require_geometry_environment(runtime_environment)
     manifest_path, manifest_value = load_geometry_manifest(manifest)
     selection_path, selection_value = load_frozen_selection(selection)
     if sha256_file(manifest_path) != selection_value["source_manifest_sha256"]:
@@ -223,6 +283,7 @@ def run_agent_geometry_campaign(
         job_time_budget=job_time_budget,
         score_samples=score_samples,
         voxel_resolution=voxel_resolution,
+        runtime_environment=runtime_environment,
     )
     campaign_manifest_path = campaign_dir / "agent-campaign-manifest.json"
     if campaign_manifest_path.is_file():

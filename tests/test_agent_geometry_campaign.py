@@ -73,6 +73,25 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
     assert campaign_manifest["selection"]["sample_ids"] == ["sample:1"]
     assert campaign_manifest["model"]["name"] == "gpt-5.6-sol"
     assert campaign_manifest["agent_condition"] == "durable-kernel-compat-v1"
+    assert "python" in campaign_manifest["runtime_environment"]
+    assert set(campaign_manifest["runtime_environment"]["packages"]) == {
+        "cadquery-ocp", "numpy", "scipy", "trimesh",
+    }
+
+
+def test_preflight_reports_missing_geometry_distribution() -> None:
+    environment = {
+        "packages": {
+            "cadquery-ocp": None,
+            "numpy": "1.26.4",
+            "scipy": "1.15.3",
+            "trimesh": "4.12.2",
+        },
+        "codex": {"version": "codex-cli test"},
+    }
+
+    with pytest.raises(RuntimeError, match="cadquery-ocp"):
+        agent_geometry_campaign.require_geometry_environment(environment)
 
 
 def test_frozen_selection_detects_identifier_edits(tmp_path: Path) -> None:
