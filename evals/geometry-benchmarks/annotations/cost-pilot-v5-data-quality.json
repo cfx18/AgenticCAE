@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "campaign": "geometry-cost-pilot-v5",
+  "campaign_manifest_sha256": "9cbdf17bf98d6ef89d5a591a4c2d003ebdc93e3ae11b31cb0d499bb2d44e116c",
+  "split_sha256": "4a51719d613629c5b26468ffe79dff0dab297a1c8c253cc25a8872ca5c2d70ad",
+  "audit_date": "2026-09-01",
+  "derived_from": "cost-pilot-v2-data-quality.json",
+  "samples": {
+    "omnimech:9": {
+      "status": "exclude_primary",
+      "issue_types": [
+        "configuration_mismatch",
+        "ambiguous_variant_selection"
+      ],
+      "evidence": [
+        "The visible length table supports multiple variants and the task does not identify which row is the evaluator target.",
+        "Agents independently selected 190 and 100 length variants from the input, while the ground-truth bounding-box length is 40.",
+        "Verifier feedback therefore changes the configuration choice rather than only correcting reconstruction geometry."
+      ],
+      "recommended_use": "Retain as a diagnostic data-quality case, but exclude it from primary model-comparison metrics."
+    },
+    "ortho2cad:00141107": {
+      "status": "review",
+      "issue_types": [
+        "underdimensioned_internal_feature"
+      ],
+      "evidence": [
+        "The square-tube outer dimensions are labeled, but wall thickness is not directly dimensioned.",
+        "Strict reconstruction required inferring the inner section from verifier volume feedback."
+      ],
+      "recommended_use": "Retain, but report that repair uses ground-truth-derived numerical feedback for an unlabeled feature."
+    },
+    "ortho2cad:00315650": {
+      "status": "review",
+      "issue_types": [
+        "underdimensioned_internal_feature"
+      ],
+      "evidence": [
+        "Outer diameter and height are labeled, but the coaxial bore diameter is not directly dimensioned.",
+        "The agent explicitly estimated the bore before tuning it from verifier volume feedback."
+      ],
+      "recommended_use": "Retain, but distinguish image-grounded dimensions from verifier-inferred dimensions."
+    }
+  }
+}
