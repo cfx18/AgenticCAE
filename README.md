@@ -17,6 +17,8 @@ evaluation; pilot results are engineering evidence, not a paper benchmark.
 - `src/cad_evoloop/evaluation/`: sealed inputs, immutable campaigns, and EQC metrics.
 - `src/cad_evoloop/ledger/`: append-only trajectories, artifacts, source hashes,
   integrity checks, and run comparison.
+- `src/cad_evoloop/agent/`: model-neutral, event-sourced project state,
+  resumable GoalGraph scheduling, and bounded context views.
 - `apps/geometry-review/`: local expert adjudication of geometry evidence,
   verifier decisions, repair trajectories, and MCP failures.
 - `.agents/skills/autocad-image-modeling/`: the project CAD skill.
@@ -24,7 +26,9 @@ evaluation; pilot results are engineering evidence, not a paper benchmark.
 The old `mcp/` and `evals/...` Python entry points remain compatibility wrappers.
 The research roadmap and protocol are in
 [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md) and
-[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md).
+[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md). The independent
+long-horizon runtime is described in
+[docs/LONG_HORIZON_AGENT.md](docs/LONG_HORIZON_AGENT.md).
 
 ## Verification
 

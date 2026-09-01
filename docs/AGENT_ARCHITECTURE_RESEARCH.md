@@ -1,6 +1,11 @@
 # EvoCAD Agent Architecture Research
 
-Status: design recommendation, 2026-09-01
+Status: design recommendation with first executable kernel slice, 2026-09-01
+
+The event store, GoalGraph scheduler, provider-neutral contracts, bounded
+context view, recovery tests, and runnable example are implemented under
+`src/cad_evoloop/agent/`; see `docs/LONG_HORIZON_AGENT.md`. Provider and CAD
+adapters remain the next semantic-parity milestone.
 
 ## Decision
 
@@ -445,4 +450,3 @@ cost-normalized success, verifier-error accounting, and blinded human audit.
 - LangGraph, [Orchestration Runtime Overview](https://langchain-ai.github.io/langgraph/index.html).
 - Temporal, [Durable Execution Documentation](https://docs.temporal.io/).
 - Model Context Protocol, [Tool Specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx), 2026.
-
