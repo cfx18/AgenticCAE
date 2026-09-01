@@ -180,6 +180,27 @@ def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, 
             improved += 1
         if trajectory and row.get("selected_attempt_id") != trajectory[-1].get("attempt_id"):
             selected_rollback += 1
+    by_dataset = []
+    for dataset in sorted({row["sample_id"].split(":", 1)[0] for row in results}):
+        subset = [row for row in results if row["sample_id"].split(":", 1)[0] == dataset]
+        subset_attempts = [len(row.get("attempts", [])) for row in subset]
+        first_scores = [
+            float(row["attempts"][0].get("score", 0.0))
+            for row in subset if row.get("attempts")
+        ]
+        strict = sum(bool(row.get("passed")) for row in subset)
+        by_dataset.append({
+            "dataset": dataset,
+            "runs": len(subset),
+            "strict_passes": strict,
+            "strict_pass_rate": round(100.0 * strict / len(subset), 2),
+            "first_attempt_mean": round(statistics.mean(first_scores), 2) if first_scores else None,
+            "selected_mean": round(
+                statistics.mean(float(row.get("score", 0.0)) for row in subset), 2,
+            ),
+            "mean_attempts": round(statistics.mean(subset_attempts), 3),
+            "safety_censored_runs": sum(row in censored for row in subset),
+        })
     return {
         "schema_version": "1.0",
         "runs": len(results),
@@ -192,7 +213,12 @@ def summarize_long_horizon_outcomes(results: list[dict[str, Any]]) -> dict[str, 
         "best_checkpoint_rollbacks": selected_rollback,
         "total_attempts": attempts,
         "mean_attempts": round(attempts / len(results), 3) if results else None,
+        "near_threshold_failures": sum(
+            not row.get("passed") and float(row.get("score", 0.0)) >= 99.0
+            for row in results
+        ),
         "run_integrity_failures": sum(not row.get("integrity", {}).get("ok", False) for row in results),
+        "by_dataset": by_dataset,
     }
 
 

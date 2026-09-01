@@ -92,3 +92,13 @@ def test_summarizes_safety_censoring_and_checkpoint_rollback(tmp_path: Path) -> 
     assert summary["safety_censored_runs"] == 1
     assert summary["safety_censored_sample_ids"] == ["sample:1"]
     assert summary["best_checkpoint_rollbacks"] == 1
+    assert summary["by_dataset"] == [{
+        "dataset": "sample",
+        "runs": 1,
+        "strict_passes": 0,
+        "strict_pass_rate": 0.0,
+        "first_attempt_mean": 80.0,
+        "selected_mean": 80.0,
+        "mean_attempts": 2,
+        "safety_censored_runs": 1,
+    }]
