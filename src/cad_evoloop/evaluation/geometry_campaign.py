@@ -12,6 +12,7 @@ import sys
 import time
 from typing import Any
 
+from cad_evoloop.agent.models.codex_cli import build_codex_exec_command, parse_codex_events
 from cad_evoloop.ledger import RunLedger
 from cad_evoloop.ledger.ledger import redact, sha256_file
 from cad_evoloop.paths import project_root
@@ -221,33 +222,29 @@ def codex_command(
     workspace = project_root()
     audited = workspace / "src/cad_evoloop/backends/autocad/audited.py"
     base_server = workspace / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"
-    command = [
-        executable,
-        "exec",
-        "--skip-git-repo-check",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--approve-for-me",
-        "--model", model,
-        "--cd", str(job_dir),
-        "-c", f'model_reasoning_effort="{effort}"',
-        "-c", 'mcp_servers.autocad.command="python"',
-        "-c", f'mcp_servers.autocad.args=["{audited.as_posix()}"]',
-        "-c", (
+    overrides = (
+        'mcp_servers.autocad.command="python"',
+        f'mcp_servers.autocad.args=["{audited.as_posix()}"]',
+        (
             "mcp_servers.autocad.env={"
             f'AUTOCAD_MCP_WORKSPACE="{workspace.as_posix()}",'
             f'AUTOCAD_MCP_AUDIT_PATH="{audit_path.as_posix()}",'
             f'AUTOCAD_MCP_BASE_SERVER="{base_server.as_posix()}"'
             "}"
         ),
-        "-c", "mcp_servers.autocad.startup_timeout_sec=20",
-        "-c", "mcp_servers.autocad.tool_timeout_sec=60",
-    ]
-    if images:
-        command.append("--image")
-        command.extend(str(path) for path in images)
-    command.extend(["--json", "--output-last-message", str(final_path), prompt])
-    return command
+        "mcp_servers.autocad.startup_timeout_sec=20",
+        "mcp_servers.autocad.tool_timeout_sec=60",
+    )
+    return build_codex_exec_command(
+        executable=executable,
+        model=model,
+        reasoning_effort=effort,
+        cwd=job_dir,
+        prompt=prompt,
+        final_path=final_path,
+        images=tuple(images),
+        config_overrides=overrides,
+    )
 
 
 def codex_resume_command(
@@ -265,61 +262,41 @@ def codex_resume_command(
 ) -> list[str]:
     """Resume the same agent trajectory for an action or feedback decision turn."""
     workspace = project_root()
-    command = [
-        executable,
-        "exec",
-        "--skip-git-repo-check",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--approve-for-me",
-        "--model", model,
-        "--cd", str(job_dir),
-        "-c", f'model_reasoning_effort="{effort}"',
-    ]
+    overrides = []
     if with_autocad:
         if audit_path is None:
             raise ValueError("audit_path is required when resuming with AutoCAD")
         audited = workspace / "src/cad_evoloop/backends/autocad/audited.py"
         base_server = workspace / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"
-        command.extend([
-            "-c", 'mcp_servers.autocad.command="python"',
-            "-c", f'mcp_servers.autocad.args=["{audited.as_posix()}"]',
-            "-c", (
+        overrides.extend([
+            'mcp_servers.autocad.command="python"',
+            f'mcp_servers.autocad.args=["{audited.as_posix()}"]',
+            (
                 "mcp_servers.autocad.env={"
                 f'AUTOCAD_MCP_WORKSPACE="{workspace.as_posix()}",'
                 f'AUTOCAD_MCP_AUDIT_PATH="{audit_path.as_posix()}",'
                 f'AUTOCAD_MCP_BASE_SERVER="{base_server.as_posix()}"'
                 "}"
             ),
-            "-c", "mcp_servers.autocad.startup_timeout_sec=20",
-            "-c", "mcp_servers.autocad.tool_timeout_sec=60",
+            "mcp_servers.autocad.startup_timeout_sec=20",
+            "mcp_servers.autocad.tool_timeout_sec=60",
         ])
-    if output_schema is not None:
-        command.extend(["--output-schema", str(output_schema)])
-    command.extend([
-        "--json", "--output-last-message", str(final_path),
-        "resume", thread_id, prompt,
-    ])
-    return command
+    return build_codex_exec_command(
+        executable=executable,
+        model=model,
+        reasoning_effort=effort,
+        cwd=job_dir,
+        prompt=prompt,
+        final_path=final_path,
+        thread_id=thread_id,
+        output_schema=output_schema,
+        config_overrides=tuple(overrides),
+    )
 
 
 def _read_codex_events(path: Path) -> dict[str, Any]:
-    thread_id = None
-    usage: dict[str, Any] = {}
-    errors = []
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "thread.started":
-                thread_id = event.get("thread_id")
-            elif event.get("type") == "turn.completed":
-                usage = event.get("usage") or usage
-            elif event.get("type") in {"error", "turn.failed"}:
-                errors.append(event.get("message") or event.get("error"))
-    return {"thread_id": thread_id, "usage": usage, "errors": errors}
+    value = parse_codex_events(path)
+    return {key: value[key] for key in ("thread_id", "usage", "errors")}
 
 
 def safety_stop_reason(

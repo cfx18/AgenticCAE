@@ -18,7 +18,8 @@ evaluation; pilot results are engineering evidence, not a paper benchmark.
 - `src/cad_evoloop/ledger/`: append-only trajectories, artifacts, source hashes,
   integrity checks, and run comparison.
 - `src/cad_evoloop/agent/`: model-neutral, event-sourced project state,
-  resumable GoalGraph scheduling, and bounded context views.
+  resumable GoalGraph scheduling, typed engineering artifacts, stage contracts,
+  external-operation reconciliation, Codex compatibility, and bounded context views.
 - `apps/geometry-review/`: local expert adjudication of geometry evidence,
   verifier decisions, repair trajectories, and MCP failures.
 - `.agents/skills/autocad-image-modeling/`: the project CAD skill.
@@ -29,6 +30,9 @@ The research roadmap and protocol are in
 [docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md). The independent
 long-horizon runtime is described in
 [docs/LONG_HORIZON_AGENT.md](docs/LONG_HORIZON_AGENT.md).
+The cross-stage CAE design and experiment boundary are in
+[docs/ENGINEERING_AGENT_ARCHITECTURE.md](docs/ENGINEERING_AGENT_ARCHITECTURE.md)
+and [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md).
 
 ## Verification
 

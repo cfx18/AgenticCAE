@@ -141,3 +141,25 @@ Raw data remains local because not every upstream source has redistribution
 terms. Campaign trajectories and binary candidates are also local and ignored;
 their manifests bind sources, inputs, and ground truth by SHA-256.
 Download, materialization, split, and campaign manifests are deterministic.
+
+## Durable Agent Evaluation
+
+The first long-horizon compatibility condition fixes the model to
+`gpt-5.6-sol` and evaluates 30 unique dev/validation samples while retaining all
+hidden-test samples for later use:
+
+```powershell
+cad-evoloop agent-geometry-batch `
+  .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  evals/geometry-benchmarks/splits/geometry-30-devval-v1.json `
+  --campaign agent-geometry-30-sol-v1 `
+  --model gpt-5.6-sol --reasoning-effort medium
+```
+
+Use `--max-jobs 1` for an initial end-to-end smoke; rerunning the same command
+without the limit resumes the immutable campaign and skips completed projects.
+
+Each sample runs in an isolated event-sourced Project. The campaign manifest
+binds the selection, model, execution settings, and hashes of every Agent,
+prompt, skill, and protocol source. This compatibility condition must be
+interpreted as a durability/parity experiment, not as a new modeling policy.

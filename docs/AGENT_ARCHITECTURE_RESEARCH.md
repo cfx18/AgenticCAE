@@ -5,7 +5,10 @@ Status: design recommendation with first executable kernel slice, 2026-09-01
 The event store, GoalGraph scheduler, provider-neutral contracts, bounded
 context view, recovery tests, and runnable example are implemented under
 `src/cad_evoloop/agent/`; see `docs/LONG_HORIZON_AGENT.md`. Provider and CAD
-adapters remain the next semantic-parity milestone.
+adapters now include a Codex CLI compatibility provider, typed engineering
+artifacts, stage contracts, operation reconciliation, and a geometry campaign
+bridge. See `docs/ENGINEERING_AGENT_ARCHITECTURE.md` and
+`docs/EXPERIMENT_LOG.md` for the current experimental boundary.
 
 ## Decision
 
@@ -427,6 +430,16 @@ new agent against Codex:
 
 Each condition needs repeated runs, paired workflow-level confidence intervals,
 cost-normalized success, verifier-error accounting, and blinded human audit.
+
+## 2026 CAE-Agent Evidence
+
+- [WCCM-ECCOMAS 2026 CAD-FEA-optimization workflow](https://wccm-eccomas2026.org/event/contribution/1c6a531e-eeb8-11f0-b205-000c29ddfc0c)
+- [ALL-FEM](https://arxiv.org/abs/2603.21011)
+- [Hybrid structural-analysis pipeline](https://www.nature.com/articles/s41598-026-50127-8)
+- [Abaqus MCP automation](https://www.jcoseik.or.kr/articles/article/or0W/)
+- [Self-Improving CAD Generation Agents](https://arxiv.org/abs/2605.17448)
+- [AI methods for geometry preparation and meshing](https://link.springer.com/article/10.1007/s00366-026-02379-1)
+- [ICLR 2026 long-horizon execution study](https://proceedings.iclr.cc/paper_files/paper/2026/hash/3b4e1336f775c3dba16ebbb8d2afd258-Abstract-Conference.html)
 
 ## Primary Sources
 

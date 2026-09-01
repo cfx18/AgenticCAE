@@ -17,6 +17,7 @@ from .evaluation.replay import replay_verifier
 from .evaluation.geometry_dataset import materialize_geometry_pilot
 from .evaluation.geometry_score import calibrate_geometry_manifest, score_geometry_files
 from .evaluation.geometry_campaign import run_geometry_campaign
+from .evaluation.agent_geometry_campaign import run_agent_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
 from .evaluation.geometry_review import generate_geometry_review_bundle
 from .evaluation.geometry_split import write_geometry_split
@@ -229,6 +230,40 @@ def _batch_geometry() -> None:
     print(json.dumps(result, ensure_ascii=False))
 
 
+def _batch_agent_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Run frozen geometry through the durable agent")
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("selection", type=Path)
+    parser.add_argument("--campaign", required=True)
+    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--reasoning-effort", default="medium")
+    parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--max-iterations", type=int, default=12)
+    parser.add_argument("--stagnation-limit", type=int, default=2)
+    parser.add_argument("--job-time-budget", type=int, default=3600)
+    parser.add_argument("--score-samples", type=int, default=20000)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    parser.add_argument("--max-jobs", type=int)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    result = run_agent_geometry_campaign(
+        args.manifest,
+        args.selection,
+        campaign=args.campaign,
+        model=args.model,
+        effort=args.reasoning_effort,
+        timeout=args.timeout,
+        max_iterations=args.max_iterations,
+        stagnation_limit=args.stagnation_limit,
+        job_time_budget=args.job_time_budget,
+        score_samples=args.score_samples,
+        voxel_resolution=args.voxel_resolution,
+        max_jobs=args.max_jobs,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def _report_geometry() -> None:
     parser = argparse.ArgumentParser(description="Generate a geometry campaign report")
     parser.add_argument("campaign_dir", type=Path)
@@ -326,6 +361,7 @@ def main() -> None:
         "geometry-calibrate": (_calibrate_geometry, "calibrate STEP/STL ground-truth pairs"),
         "geometry-export": (_export_geometry, "export DWG solids for geometry scoring"),
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
+        "agent-geometry-batch": (_batch_agent_geometry, "run geometry through the durable agent"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
         "geometry-split": (_split_geometry, "create a deterministic benchmark split"),
         "geometry-review-export": (_export_geometry_review, "export human-reviewable geometry evidence"),

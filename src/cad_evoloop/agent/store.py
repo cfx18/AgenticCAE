@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 from pathlib import Path
+import shutil
 from typing import Any, Iterable
 
 from cad_evoloop.agent.events import GENESIS_HASH, create_event, validate_event
+from cad_evoloop.agent.contracts import StageContract
 from cad_evoloop.agent.state import replay
 from cad_evoloop.ledger.ledger import file_lock, validate_identifier, write_json_atomic
+from cad_evoloop.ledger.ledger import sha256_file
 
 
 class ProjectStore:
@@ -132,11 +136,25 @@ class ProjectStore:
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
             return {"ok": False, "events": 0, "error": str(exc)}
         snapshot_matches = snapshot == state
+        artifact_errors = []
+        for artifact_id in state["artifact_order"]:
+            artifact = state["artifacts"][artifact_id]
+            path = (self.project_dir / artifact["uri"]).resolve()
+            if not path.is_relative_to(self.project_dir):
+                artifact_errors.append({"artifact_id": artifact_id, "error": "path_escape"})
+            elif not path.is_file():
+                artifact_errors.append({"artifact_id": artifact_id, "error": "missing"})
+            elif path.stat().st_size != artifact["byte_size"]:
+                artifact_errors.append({"artifact_id": artifact_id, "error": "size_mismatch"})
+            elif sha256_file(path) != artifact["sha256"]:
+                artifact_errors.append({"artifact_id": artifact_id, "error": "digest_mismatch"})
         return {
-            "ok": snapshot_matches,
+            "ok": snapshot_matches and not artifact_errors,
             "events": len(events),
             "last_event_hash": events[-1]["event_hash"] if events else GENESIS_HASH,
             "snapshot_matches": snapshot_matches,
+            "artifacts_verified": len(state["artifacts"]) - len(artifact_errors),
+            "artifact_errors": artifact_errors,
         }
 
     def add_work_unit(
@@ -149,6 +167,11 @@ class ProjectStore:
         acceptance_criteria: Iterable[str],
         dependencies: Iterable[str] = (),
         max_attempts: int = 3,
+        phase: str = "execution",
+        contract_id: str | None = None,
+        input_artifact_ids: Iterable[str] = (),
+        parameters: dict[str, Any] | None = None,
+        plan_id: str | None = None,
         actor: str = "planner",
     ) -> dict[str, Any]:
         unit_id = validate_identifier(unit_id, "unit_id")
@@ -162,7 +185,102 @@ class ProjectStore:
                 "acceptance_criteria": list(acceptance_criteria),
                 "dependencies": list(dependencies),
                 "max_attempts": max_attempts,
+                "phase": phase,
+                "contract_id": contract_id,
+                "input_artifact_ids": list(input_artifact_ids),
+                "parameters": parameters or {},
+                "plan_id": plan_id,
             },
             actor=actor,
             idempotency_key=f"work_unit.added:{unit_id}",
+        )
+
+    def register_plan(self, plan: Any, *, actor: str = "planner") -> dict[str, Any]:
+        plan_id = validate_identifier(plan.plan_id, "plan_id")
+        return self.append(
+            "plan.registered",
+            plan.to_dict(),
+            actor=actor,
+            idempotency_key=f"plan.registered:{plan_id}",
+        )
+
+    def register_contract(
+        self, contract: StageContract, *, actor: str = "planner",
+    ) -> dict[str, Any]:
+        validate_identifier(contract.contract_id, "contract_id")
+        return self.append(
+            "contract.registered",
+            contract.to_dict(),
+            actor=actor,
+            idempotency_key=f"contract.registered:{contract.contract_id}",
+        )
+
+    def register_artifact(
+        self,
+        source: str | Path,
+        *,
+        artifact_id: str,
+        kind: str,
+        producer_work_unit: str | None = None,
+        parents: Iterable[str] = (),
+        media_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor: str = "executor",
+    ) -> dict[str, Any]:
+        artifact_id = validate_identifier(artifact_id, "artifact_id")
+        source_path = Path(source).resolve()
+        if not source_path.is_file():
+            raise FileNotFoundError(source_path)
+        digest = sha256_file(source_path)
+        suffix = source_path.suffix.lower()
+        relative = Path("artifacts") / digest[:2] / f"{digest}{suffix}"
+        destination = self.project_dir / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.is_file():
+            if sha256_file(destination) != digest:
+                raise ValueError(f"Content-addressed artifact collision: {destination}")
+        else:
+            temporary = destination.with_suffix(destination.suffix + ".tmp")
+            shutil.copy2(source_path, temporary)
+            os.replace(temporary, destination)
+        payload = {
+            "artifact_id": artifact_id,
+            "kind": kind,
+            "uri": relative.as_posix(),
+            "sha256": digest,
+            "byte_size": destination.stat().st_size,
+            "media_type": media_type or mimetypes.guess_type(destination.name)[0] or "application/octet-stream",
+            "producer_work_unit": producer_work_unit,
+            "parents": list(parents),
+            "metadata": metadata or {},
+        }
+        return self.append(
+            "artifact.registered",
+            payload,
+            actor=actor,
+            idempotency_key=f"artifact.registered:{artifact_id}",
+        )
+
+    def record_contract_evaluation(
+        self,
+        *,
+        evaluation_id: str,
+        contract_id: str,
+        work_unit_id: str,
+        execution_id: str,
+        checks: Iterable[dict[str, Any]],
+        actor: str = "verifier",
+    ) -> dict[str, Any]:
+        evaluation_id = validate_identifier(evaluation_id, "evaluation_id")
+        return self.append(
+            "contract.evaluated",
+            {
+                "evaluation_id": evaluation_id,
+                "contract_id": contract_id,
+                "work_unit_id": work_unit_id,
+                "execution_id": execution_id,
+                "checks": list(checks),
+            },
+            actor=actor,
+            idempotency_key=f"contract.evaluated:{evaluation_id}",
         )
