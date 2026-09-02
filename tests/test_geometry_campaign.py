@@ -572,3 +572,21 @@ def test_attempt_timeout_is_bounded_by_remaining_job_budget() -> None:
     assert geometry_campaign.remaining_attempt_timeout(1800, 2400.0) == 1800
     assert geometry_campaign.remaining_attempt_timeout(1800, 37.9) == 37
     assert geometry_campaign.remaining_attempt_timeout(1800, -1.0) == 1
+
+
+def test_operation_manifest_prefers_observed_handles_from_status(tmp_path) -> None:
+    audit = tmp_path / "audit.jsonl"
+    events = [
+        {"tool": "autocad_core_start", "arguments": {"operation_manifest": [
+            {"operation_id": "op-hole", "intent": "subtract hole"},
+        ]}},
+        {"tool": "autocad_core_status", "response": {"result": {"content": [{"text": json.dumps({
+            "operation_manifest": [{
+                "operation_id": "op-hole", "intent": "subtract hole",
+                "observed_entity_handles": ["2C1"],
+            }],
+        })}]}}},
+    ]
+    audit.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+    assert geometry_campaign._operation_manifest_from_audit(audit)[0]["entity_handles"] == ["2C1"]

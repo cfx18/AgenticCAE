@@ -223,6 +223,12 @@ def _direction_regions(
                 else "medium" if len(sample_indices) >= 8
                 else "low"
             ),
+            "source_surface_query_points": [
+                _round_vector(region_points[index])
+                for index in np.linspace(
+                    0, len(region_points) - 1, min(9, len(region_points)), dtype=np.int64,
+                )
+            ],
             "_sample_indices": sample_indices,
             "_rank": float(p95 / diagonal) * math.sqrt(len(sample_indices)),
         })

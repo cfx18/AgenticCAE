@@ -8,6 +8,8 @@ Use the AutoCAD MCP server for all CAD work. First call autocad_set_run_context 
 
 Choose any valid AutoLISP/AutoCAD construction strategy. Preserve the drawing's dimensions exactly; do not infer scale from pixels when a numeric dimension is visible. Build the primary profile and features in recoverable stages, use Boolean checks after subtract/union operations, and verify the final entity is a 3DSOLID before saving it to $candidate. Input and output paths for every Core Console job must differ.
 
+For each `autocad_core_start`, attach the optional `operation_manifest` with short stable operation IDs and geometric intents (for example base extrusion, hole subtraction, fillet, or recovery). This is provenance metadata only: it does not constrain the AutoLISP you may execute. When known, include affected entity handles or topology fingerprints.
+
 AutoCAD Core Console does not provide the desktop application ActiveX object. Do not call `vlax-get-acad-object`, `vla-get-ActiveDocument`, or desktop document APIs. Use entity functions, selection sets, direct commands, and DXF data instead.
 
 Finish only after autocad_core_status reports succeeded and $candidate exists. In the final response state the output path and any genuinely ambiguous dimensions.

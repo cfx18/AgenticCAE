@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 from string import Template
@@ -16,6 +17,7 @@ from cad_evoloop.agent.models.codex_cli import build_codex_exec_command, parse_c
 from cad_evoloop.ledger import RunLedger
 from cad_evoloop.ledger.ledger import redact, sha256_file
 from cad_evoloop.paths import project_root
+from cad_evoloop.backends.autocad.topology import build_topology_plugin, export_topology_core
 from cad_evoloop.verification.export_core_console import export_dwg_core
 
 from .geometry_score import (
@@ -24,6 +26,7 @@ from .geometry_score import (
     PROTOCOL_ID,
     score_geometry_files,
 )
+from .geometry_features import enrich_score_with_topology, face_query_rows, load_topology
 
 
 DEFAULT_MODEL = "gpt-5.6-sol"
@@ -191,6 +194,8 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / ".agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py",
         workspace / "src/cad_evoloop/backends/autocad/audited.py",
         workspace / "src/cad_evoloop/backends/autocad/core_console.py",
+        workspace / "src/cad_evoloop/backends/autocad/topology.py",
+        workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/evaluation/geometry_score.py",
@@ -450,6 +455,37 @@ def _feedback_diagnostics(
         "mcp_calls": mcp_calls,
         "stderr_tail": stderr_tail,
     }
+
+
+def _operation_manifest_from_audit(audit_path: Path) -> list[dict[str, Any]]:
+    """Recover Agent-declared operation provenance from immutable MCP calls."""
+    operations: dict[str, dict[str, Any]] = {}
+    if not audit_path.is_file():
+        return []
+    for line in audit_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        manifests = []
+        if event.get("tool") == "autocad_core_start":
+            manifests = (event.get("arguments") or {}).get("operation_manifest", [])
+        elif event.get("tool") == "autocad_core_status":
+            content = (event.get("response") or {}).get("result", {}).get("content", [])
+            if content:
+                try:
+                    manifests = json.loads(content[0].get("text", "")).get("operation_manifest", [])
+                except (AttributeError, json.JSONDecodeError, TypeError):
+                    manifests = []
+        for operation in manifests:
+            if isinstance(operation, dict) and operation.get("operation_id"):
+                normalized = dict(operation)
+                normalized["entity_handles"] = list(dict.fromkeys([
+                    *normalized.get("entity_handles", []),
+                    *normalized.get("observed_entity_handles", []),
+                ]))
+                operations[str(operation["operation_id"])] = normalized
+    return list(operations.values())
 
 
 def _validate_agent_decision(value: dict[str, Any]) -> None:
@@ -746,6 +782,9 @@ def run_geometry_job(
         attempt_dir.mkdir(parents=True, exist_ok=True)
         candidate = job_dir / f"candidate.{attempt_id}.dwg"
         candidate_stl = attempt_dir / "candidate.stl"
+        candidate_topology = attempt_dir / "candidate-topology.json"
+        face_query_input = attempt_dir / "face-query.tsv"
+        face_query_output = attempt_dir / "face-query.json"
         verdict_path = attempt_dir / "geometry-verdict.json"
         reflection_path = attempt_dir / "reflection.json"
         feedback_path = attempt_dir / "feedback-packet.json"
@@ -823,7 +862,62 @@ def run_geometry_job(
                     sample_count=score_samples,
                     voxel_resolution=voxel_resolution,
                 )
+                topology_error = None
+                topology_executable = Path(os.environ.get(
+                    "AUTOCAD_CORE_CONSOLE", r"E:\AutoCAD\AutoCAD 2024\accoreconsole.exe",
+                ))
+                topology_managed_dir = Path(os.environ.get(
+                    "AUTOCAD_MANAGED_DIR", str(topology_executable.parent),
+                ))
+                if topology_executable.is_file():
+                    try:
+                        topology_plugin_override = os.environ.get("AUTOCAD_TOPOLOGY_PLUGIN")
+                        topology_plugin = (
+                            Path(topology_plugin_override).resolve()
+                            if topology_plugin_override
+                            else build_topology_plugin(
+                                workspace, managed_dir=topology_managed_dir,
+                            )
+                        )
+                        query_rows = face_query_rows(
+                            raw_score["mismatch"]["localization"], raw_score["alignment"],
+                        )
+                        if query_rows:
+                            face_query_input.write_text("".join(
+                                f"{query_id}\t{x:.17g}\t{y:.17g}\t{z:.17g}\n"
+                                for query_id, (x, y, z) in query_rows
+                            ), encoding="utf-8", newline="\n")
+                        export_topology_core(
+                            workspace, candidate, candidate_topology,
+                            executable=topology_executable, plugin=topology_plugin,
+                            timeout=min(timeout, 180),
+                            query_input_path=face_query_input if query_rows else None,
+                            query_output_path=face_query_output if query_rows else None,
+                            query_source_center=raw_score["alignment"]["candidate_center"],
+                        )
+                        ledger.add_artifact(
+                            run_dir, attempt_id, candidate_topology, role="candidate-topology",
+                        )
+                        if face_query_output.is_file():
+                            ledger.add_artifact(
+                                run_dir, attempt_id, face_query_output, role="candidate-face-query",
+                            )
+                        raw_score = enrich_score_with_topology(
+                            raw_score,
+                            load_topology(candidate_topology),
+                            operations=_operation_manifest_from_audit(audit_path),
+                            query=(
+                                json.loads(face_query_output.read_text(encoding="utf-8"))
+                                if face_query_output.is_file() else None
+                            ),
+                        )
+                    except Exception as exc:
+                        topology_error = repr(exc)
                 verdict = geometry_verdict(raw_score, sample["sample_id"])
+                if topology_error:
+                    verdict["native_topology_diagnostic"] = {
+                        "status": "unavailable", "error": topology_error,
+                    }
             except Exception as exc:
                 verdict = failed_geometry_verdict(
                     sample["sample_id"], repr(exc), "geometry-verifier-error",
@@ -841,6 +935,10 @@ def run_geometry_job(
             best_verdict = verdict_path
             shutil.copy2(candidate, job_dir / "candidate.dwg")
             shutil.copy2(candidate_stl, job_dir / "candidate.stl")
+            if candidate_topology.is_file():
+                shutil.copy2(candidate_topology, job_dir / "candidate-topology.json")
+            if face_query_output.is_file():
+                shutil.copy2(face_query_output, job_dir / "face-query.json")
             shutil.copy2(verdict_path, job_dir / "geometry-verdict.json")
             non_improving_attempts = 0
         else:

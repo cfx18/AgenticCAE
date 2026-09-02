@@ -10,4 +10,6 @@ AutoCAD Core Console does not provide the desktop application ActiveX object. Do
 
 Read the decision JSON before editing and execute its evidence-grounded plan. Repair the previous best drawing with isolated autocad_core_start jobs using input_path=$previous_candidate and output_path=$candidate. Preserve correct features and change only geometry supported by the reference drawing and verifier evidence. If the latest attempt was an invalid regression, recover from the previous best drawing rather than extending the invalid artifact. The final output must contain one native editable 3DSOLID and no annotations.
 
+Attach an `operation_manifest` to each `autocad_core_start` call, using stable operation IDs and the intended feature change. If the verifier provides `candidate_topology_faces`, `engineering_feature_candidates`, or `responsible_operation_candidates`, use those links to inspect the implicated native faces and revise the smallest supported feature. This metadata never limits the AutoLISP geometry operations available to you.
+
 Finish only after autocad_core_status reports succeeded. Do not modify prompts, skills, MCP code, verifier code, manifests, or prior artifacts during this repair turn.

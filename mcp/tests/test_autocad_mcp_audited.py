@@ -51,11 +51,17 @@ def test_configure_server_adds_execution_tools_without_removing_base_tools() -> 
         "autocad_core_start",
         "autocad_core_status",
         "autocad_core_cancel",
+        "autocad_topology_start",
+        "autocad_topology_status",
+        "autocad_topology_cancel",
     }.issubset(base.TOOLS)
     start_schema = base.TOOLS["autocad_start_command"][1]
     assert start_schema["properties"]["command"]["description"].startswith(
         "Complete unrestricted"
     )
+    assert "operation_manifest" in base.TOOLS["autocad_core_start"][1]["properties"]
+    assert "query_source_center" in base.TOOLS["autocad_topology_start"][1]["properties"]
+    assert "query_source_center" not in start_schema["properties"]
 
 
 def test_configure_connection_falls_back_to_versioned_progid(monkeypatch) -> None:

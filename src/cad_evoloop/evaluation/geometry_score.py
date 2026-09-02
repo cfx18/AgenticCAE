@@ -294,6 +294,8 @@ def score_geometry_files(
     *,
     sample_count: int = 20000,
     voxel_resolution: int = 64,
+    candidate_topology_path: str | Path | None = None,
+    operation_manifest: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if sample_count <= 0 or voxel_resolution < 16:
         raise ValueError("sample_count must be positive and voxel_resolution must be at least 16")
@@ -304,6 +306,7 @@ def score_geometry_files(
         raise FileNotFoundError(candidate_path if not candidate_path.is_file() else ground_truth_path)
     candidate = _load_mesh(candidate_path)
     ground_truth = _load_mesh(ground_truth_path)
+    candidate_bounds = candidate.bounds.copy()
     aligned, chamfer, rotation = _aligned_candidate(candidate, ground_truth, sample_count)
     diagonal = float(np.linalg.norm(ground_truth.extents))
     if diagonal <= 0:
@@ -349,6 +352,20 @@ def score_geometry_files(
     quality_tier = "strict" if all(checks.values()) else (
         "acceptable" if all(acceptable_checks.values()) else "failed"
     )
+    mismatch = _distance_diagnostics(
+        aligned, ground_truth, sample_count, cKDTree, np,
+    )
+    if candidate_topology_path is not None:
+        from .geometry_features import enrich_localization_with_topology, load_topology
+
+        mismatch["localization"] = enrich_localization_with_topology(
+            mismatch["localization"],
+            load_topology(candidate_topology_path),
+            candidate_bounds=candidate_bounds.tolist(),
+            truth_bounds=ground_truth.bounds.tolist(),
+            rotation=rotation.tolist(),
+            operations=operation_manifest,
+        )
     return {
         "schema_version": "1.0",
         "protocol": PROTOCOL_ID,
@@ -363,12 +380,12 @@ def score_geometry_files(
         "alignment": {
             "type": "right-handed-axis-permutation-plus-translation",
             "rotation": rotation.round(6).tolist(),
+            "candidate_center": candidate_bounds.mean(axis=0).round(6).tolist(),
+            "ground_truth_center": ground_truth.bounds.mean(axis=0).round(6).tolist(),
             "scale_allowed": False,
         },
         "metrics": metrics,
-        "mismatch": _distance_diagnostics(
-            aligned, ground_truth, sample_count, cKDTree, np,
-        ),
+        "mismatch": mismatch,
         "candidate_geometry": {
             "vertices": int(len(aligned.vertices)),
             "triangles": int(len(aligned.faces)),

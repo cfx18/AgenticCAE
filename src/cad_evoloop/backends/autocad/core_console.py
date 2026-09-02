@@ -58,6 +58,7 @@ class CoreConsoleJobManager:
         output_path: str,
         input_path: str | None = None,
         timeout: float = 120,
+        operation_manifest: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not isinstance(lisp, str) or not lisp.strip():
             raise ValueError("lisp must be a non-empty string")
@@ -72,6 +73,9 @@ class CoreConsoleJobManager:
             raise FileNotFoundError(f"AutoCAD Core Console not found: {self.executable}")
         if seed == output:
             raise ValueError("input_path and output_path must be different")
+        operation_manifest = operation_manifest or []
+        if not isinstance(operation_manifest, list) or any(not isinstance(item, dict) for item in operation_manifest):
+            raise ValueError("operation_manifest must be an array of objects")
 
         job_id = uuid.uuid4().hex
         job_dir = self.workspace / "mcp" / "jobs" / job_id
@@ -80,12 +84,20 @@ class CoreConsoleJobManager:
         payload_path = job_dir / "payload.lsp"
         script_path = job_dir / "run.scr"
         success_path = job_dir / "success.txt"
+        handles_path = job_dir / "final-solid-handles.txt"
         working_path = job_dir / "working.dwg"
         shutil.copy2(seed, working_path)
         payload_path.write_text(
             "(vl-load-com)\n"
             + lisp.rstrip()
-            + "\n(command \"_.QSAVE\")\n"
+            + "\n"
+            + f'(setq mcp-handles-file (open "{lisp_string(handles_path)}" "w"))\n'
+            + '(if (setq mcp-solids (ssget "_X" \'((0 . "3DSOLID"))))\n'
+            + '  (progn (setq mcp-index 0) (repeat (sslength mcp-solids)\n'
+            + '    (write-line (cdr (assoc 5 (entget (ssname mcp-solids mcp-index)))) mcp-handles-file)\n'
+            + '    (setq mcp-index (1+ mcp-index)))))\n'
+            + '(close mcp-handles-file)\n'
+            + "(command \"_.QSAVE\")\n"
             + f'(setq mcp-success-file (open "{lisp_string(success_path)}" "w"))\n'
             + '(write-line "ok" mcp-success-file)\n'
             + "(close mcp-success-file)\n(princ)\n",
@@ -104,6 +116,7 @@ class CoreConsoleJobManager:
             "output_path": str(output),
             "timeout_seconds": timeout,
             "lisp_length": len(lisp),
+            "operation_manifest": operation_manifest,
         }, indent=2) + "\n", encoding="utf-8")
 
         job = {
@@ -121,6 +134,7 @@ class CoreConsoleJobManager:
             "return_code": None,
             "error": None,
             "diagnostic": None,
+            "operation_manifest": operation_manifest,
         }
         cancel_event = threading.Event()
         with self._lock:
@@ -134,7 +148,7 @@ class CoreConsoleJobManager:
             self._trim_history_locked()
         threading.Thread(
             target=self._run,
-            args=(job_id, working_path, script_path, output, success_path, timeout, cancel_event),
+            args=(job_id, working_path, script_path, output, success_path, handles_path, timeout, cancel_event),
             name=f"accoreconsole-{job_id[:8]}",
             daemon=True,
         ).start()
@@ -168,6 +182,7 @@ class CoreConsoleJobManager:
         script: Path,
         output: Path,
         success_path: Path,
+        handles_path: Path,
         timeout: float,
         cancel_event: threading.Event,
     ) -> None:
@@ -221,6 +236,16 @@ class CoreConsoleJobManager:
             else:
                 shutil.copy2(seed, output)
                 status, error = "succeeded", None
+                observed_handles = (
+                    [line.strip() for line in handles_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                    if handles_path.is_file() else []
+                )
+                with self._lock:
+                    self._jobs[job_id]["observed_solid_handles"] = observed_handles
+                    self._jobs[job_id]["operation_manifest"] = [
+                        {**item, "observed_entity_handles": observed_handles}
+                        for item in self._jobs[job_id]["operation_manifest"]
+                    ]
         except TimeoutError as exc:
             status, error = "timed_out", str(exc)
         except Exception as exc:

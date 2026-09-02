@@ -379,6 +379,8 @@ def generate_geometry_review_bundle(
             reflection_stderr_path = attempt_dir / "reflection-stderr.log"
             audit_path = attempt_dir / "mcp-audit.jsonl"
             candidate_path = attempt_dir / "candidate.stl"
+            candidate_topology_path = attempt_dir / "candidate-topology.json"
+            face_query_path = attempt_dir / "face-query.json"
             parse_errors = []
             try:
                 verdict = _read_json(verdict_path, {})
@@ -399,10 +401,18 @@ def generate_geometry_review_bundle(
             overlay_render = assets / asset_root / f"{attempt_id}-overlay.png"
             candidate_geometry = assets / asset_root / f"{attempt_id}-candidate.stl"
             localization_asset = assets / asset_root / f"{attempt_id}-localization.json"
+            topology_asset = assets / asset_root / f"{attempt_id}-topology.json"
+            face_query_asset = assets / asset_root / f"{attempt_id}-face-query.json"
             candidate_render.unlink(missing_ok=True)
             overlay_render.unlink(missing_ok=True)
             candidate_geometry.unlink(missing_ok=True)
             localization_asset.unlink(missing_ok=True)
+            topology_asset.unlink(missing_ok=True)
+            face_query_asset.unlink(missing_ok=True)
+            if candidate_topology_path.is_file():
+                shutil.copy2(candidate_topology_path, topology_asset)
+            if face_query_path.is_file():
+                shutil.copy2(face_query_path, face_query_asset)
             render_error = ground_truth_error
             localization_error = None
             localization_summary = None
@@ -530,6 +540,8 @@ def generate_geometry_review_bundle(
                     "candidate": _file_evidence(candidate_geometry),
                     "ground_truth": _file_evidence(truth_geometry),
                     "localization": _file_evidence(localization_asset),
+                    "topology": _file_evidence(topology_asset),
+                    "face_query": _file_evidence(face_query_asset),
                 },
             }
             attempts.append({
@@ -569,6 +581,10 @@ def generate_geometry_review_bundle(
                     if truth_geometry.is_file() else None,
                     "localization": "assets/" + localization_asset.relative_to(assets).as_posix()
                     if localization_asset.is_file() else None,
+                    "topology": "assets/" + topology_asset.relative_to(assets).as_posix()
+                    if topology_asset.is_file() else None,
+                    "face_query": "assets/" + face_query_asset.relative_to(assets).as_posix()
+                    if face_query_asset.is_file() else None,
                 },
                 "render_error": render_error,
                 "localization_error": localization_error,

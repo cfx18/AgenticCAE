@@ -57,6 +57,12 @@ def _campaign(tmp_path: Path) -> tuple[Path, Path, Path]:
         "failure_owner": "drawing", "observed_failures": ["IoU low"],
     }), encoding="utf-8")
     (attempt / "candidate.stl").write_bytes(b"solid test\nendsolid test\n")
+    (attempt / "candidate-topology.json").write_text(json.dumps({
+        "schema_version": "1.0", "entities": [], "errors": [],
+    }), encoding="utf-8")
+    (attempt / "face-query.json").write_text(json.dumps({
+        "schema_version": "1.0", "queries": [],
+    }), encoding="utf-8")
     (attempt / "codex-events.jsonl").write_text(json.dumps({
         "type": "item.completed", "item": {"type": "agent_message", "text": "I will repair it."},
     }) + "\n", encoding="utf-8")
@@ -133,6 +139,9 @@ def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None
     assert run["attempts"][0]["safety_stop_reason"] == "max_iterations"
     assert run["attempts"][0]["mcp_events"][0]["status"] == "fail"
     assert len(run["attempts"][0]["evidence_sha256"]) == 64
+    assert run["attempts"][0]["geometry"]["topology"].endswith("a001-topology.json")
+    assert run["attempts"][0]["evidence"]["geometry_assets"]["topology"]["sha256"]
+    assert run["attempts"][0]["geometry"]["face_query"].endswith("a001-face-query.json")
     assert (output / "review-data.json").is_file()
     assert (output / "app/vendor/three/three.module.min.js").is_file()
     assert (output / "app/vendor/three/three.core.min.js").is_file()
@@ -260,6 +269,8 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert "focusRegion" in viewer
     assert "addLocalization" in viewer
     assert "state.selectedRegion" in script
+    assert "candidate_topology_faces" in script
+    assert "responsible_operation_candidates" in script
     assert "Decision transport" in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer

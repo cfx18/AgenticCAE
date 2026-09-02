@@ -262,3 +262,33 @@ Review artifacts:
 
 The report materializer records blocked work units separately and excludes them
 from geometry-score aggregates instead of fabricating a zero-score CAD result.
+
+## 2026-09-02: Native B-Rep Feature Localization Prototype
+
+The second localization stage added a workspace-built AutoCAD managed plugin
+and three non-restrictive MCP tools for asynchronous native topology export.
+`autocad_core_start` still accepts arbitrary AutoLISP; an optional operation
+manifest now records intent and the final solid handles observed by the backend.
+
+Real-DWG validation used `omnimech:4` attempts from the human-feedback v3
+campaign:
+
+- a008 exported one solid with 5,247 faces, 15,631 edges, and 10,391 vertices
+  in 11.9 seconds with zero entity export errors;
+- unwrapping trimmed external geometry resolved 5,216 planar, 28 cylindrical,
+  and 3 conical faces, plus 15,180 line, 440 circular, and 11 NURBS edges;
+- a001 exported a compact 9-face graph with 20 face adjacencies and 2 analytic
+  feature candidates;
+- an end-to-end low-score diagnostic produced four mismatch regions and ranked
+  native candidate faces for every region;
+- exact native queries used 36 retained surface points across those four regions;
+  both candidate-to-truth regions mapped to their AutoCAD faces at zero native
+  surface distance after automatically recovering the `STLOUT` translation
+  `[-30.002117, -30.000001, -8.000001]`;
+- an isolated Core Console provenance test recorded final solid handle `2C1`
+  against the declared operation without changing the unrestricted payload.
+
+These checks establish transport, extraction, alignment, graph construction,
+and persistence. They do not establish exact design-history recovery. Face
+mapping is currently spatial and confidence-labelled; exact point-to-face
+queries and calibrated feature-class precision remain follow-up experiments.

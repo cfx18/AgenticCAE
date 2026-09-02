@@ -94,6 +94,8 @@ class GeometryCampaignExecutor:
         files = [
             (job_dir / "candidate.dwg", "cad_model", "candidate"),
             (job_dir / "candidate.stl", "surface_mesh", "candidate-mesh"),
+            (job_dir / "candidate-topology.json", "cad_topology", "candidate-topology"),
+            (job_dir / "face-query.json", "cad_face_query", "candidate-face-query"),
             (job_dir / "geometry-verdict.json", "verifier_report", "verdict"),
             (job_dir / "result.json", "trajectory_result", "result"),
         ]

@@ -15,6 +15,7 @@ import winreg
 if __package__:
     from .jobs import CommandJobManager, make_autocad_runner, post_escape_to_window
     from .core_console import CoreConsoleJobManager
+    from .topology import TopologyExportJobManager
 else:  # Supports MCP launch by absolute script path.
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from cad_evoloop.backends.autocad.jobs import (
@@ -23,6 +24,7 @@ else:  # Supports MCP launch by absolute script path.
         post_escape_to_window,
     )
     from cad_evoloop.backends.autocad.core_console import CoreConsoleJobManager
+    from cad_evoloop.backends.autocad.topology import TopologyExportJobManager
 
 
 WORKSPACE = Path(os.environ.get("AUTOCAD_MCP_WORKSPACE", Path.cwd())).resolve()
@@ -40,6 +42,7 @@ SECRET_KEYS = ("authorization", "cookie", "password", "secret", "token", "api_ke
 RUN_CONTEXT: dict[str, str | None] = {"sample_id": None, "run_id": None, "attempt_id": None}
 JOB_MANAGER: CommandJobManager | None = None
 CORE_MANAGER: CoreConsoleJobManager | None = None
+TOPOLOGY_MANAGER: TopologyExportJobManager | None = None
 CORE_CONSOLE = Path(os.environ.get(
     "AUTOCAD_CORE_CONSOLE",
     r"E:\AutoCAD\AutoCAD 2024\accoreconsole.exe",
@@ -47,6 +50,10 @@ CORE_CONSOLE = Path(os.environ.get(
 CORE_TEMPLATE = Path(os.environ.get(
     "AUTOCAD_CORE_TEMPLATE",
     r"C:\Users\8320\AppData\Local\Autodesk\AutoCAD 2024\R24.3\chs\Template\acadiso.dwt",
+)).resolve()
+TOPOLOGY_PLUGIN = Path(os.environ.get(
+    "AUTOCAD_TOPOLOGY_PLUGIN",
+    WORKSPACE / ".local/autocad-topology/EvoCadTopology.dll",
 )).resolve()
 
 
@@ -166,12 +173,14 @@ def write_audit(
 
 def configure_server(base: Any) -> CommandJobManager:
     """Add audited execution tools without changing the base geometry surface."""
-    global JOB_MANAGER, CORE_MANAGER
+    global JOB_MANAGER, CORE_MANAGER, TOPOLOGY_MANAGER
     configure_autocad_connection(base)
     manager = CommandJobManager(make_autocad_runner(base), canceller=post_escape_to_window)
     core_manager = CoreConsoleJobManager(WORKSPACE, CORE_CONSOLE, CORE_TEMPLATE)
     JOB_MANAGER = manager
     CORE_MANAGER = core_manager
+    topology_manager = TopologyExportJobManager(WORKSPACE, CORE_CONSOLE, TOPOLOGY_PLUGIN)
+    TOPOLOGY_MANAGER = topology_manager
 
     def set_run_context(arguments: dict[str, Any]) -> dict[str, Any]:
         """Associate subsequent AutoCAD calls with an evaluation run and attempt."""
@@ -224,6 +233,7 @@ def configure_server(base: Any) -> CommandJobManager:
             arguments.get("output_path"),
             arguments.get("input_path"),
             arguments.get("timeout", 120),
+            arguments.get("operation_manifest"),
         )
 
     def core_status(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -233,6 +243,22 @@ def configure_server(base: Any) -> CommandJobManager:
     def core_cancel(arguments: dict[str, Any]) -> dict[str, Any]:
         """Terminate only the specified isolated Core Console job process."""
         return core_manager.cancel(str(arguments["job_id"]))
+
+    def topology_start(arguments: dict[str, Any]) -> dict[str, Any]:
+        """Export native entity and B-Rep topology without modifying the source drawing."""
+        return topology_manager.start(
+            arguments.get("input_path"), arguments.get("output_path"), arguments.get("timeout", 120),
+            arguments.get("query_input_path"), arguments.get("query_output_path"),
+            arguments.get("query_source_center"),
+        )
+
+    def topology_status(arguments: dict[str, Any]) -> dict[str, Any]:
+        """Return status and JSON artifact paths for a native topology export."""
+        return topology_manager.status(str(arguments["job_id"]))
+
+    def topology_cancel(arguments: dict[str, Any]) -> dict[str, Any]:
+        """Terminate only the specified topology export process."""
+        return topology_manager.cancel(str(arguments["job_id"]))
 
     job_schema = {
         "type": "object",
@@ -293,12 +319,44 @@ def configure_server(base: Any) -> CommandJobManager:
                         "description": "Optional workspace DWG from a previous stage; defaults to a blank metric template",
                     },
                     "timeout": {"type": "number", "minimum": 0, "maximum": 1800},
+                    "operation_manifest": {
+                        "type": "array",
+                        "description": "Optional non-restrictive provenance metadata describing intended modeling operations",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "operation_id": {"type": "string"},
+                                "intent": {"type": "string"},
+                                "entity_handles": {"type": "array", "items": {"type": "string"}},
+                                "face_fingerprints": {"type": "array", "items": {"type": "string"}},
+                                "feature_ids": {"type": "array", "items": {"type": "string"}},
+                            },
+                            "required": ["operation_id", "intent"],
+                        },
+                    },
                 },
                 "required": ["lisp", "output_path"],
             },
         ),
         "autocad_core_status": (core_status, job_schema),
         "autocad_core_cancel": (core_cancel, job_schema),
+        "autocad_topology_start": (
+            topology_start,
+            {
+                "type": "object",
+                "properties": {
+                    "input_path": {"type": "string", "description": "Workspace DWG to inspect without modification"},
+                    "output_path": {"type": "string", "description": "Workspace JSON path for native entity and B-Rep topology"},
+                    "timeout": {"type": "number", "minimum": 0, "maximum": 1800},
+                    "query_input_path": {"type": "string", "description": "Optional workspace TSV containing query_id, x, y, z in candidate mesh coordinates"},
+                    "query_output_path": {"type": "string", "description": "Optional workspace JSON path for exact trimmed-face query results"},
+                    "query_source_center": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3, "description": "Optional center of the scored candidate mesh for automatic STL-to-WCS translation"},
+                },
+                "required": ["input_path", "output_path"],
+            },
+        ),
+        "autocad_topology_status": (topology_status, job_schema),
+        "autocad_topology_cancel": (topology_cancel, job_schema),
     })
     return manager
 
@@ -306,7 +364,7 @@ def configure_server(base: Any) -> CommandJobManager:
 def main() -> None:
     configure_stdio()
     base = load_base_server()
-    base.SERVER_VERSION = "0.5.0"
+    base.SERVER_VERSION = "0.6.0"
     configure_server(base)
     original_handle = base.handle
 

@@ -69,3 +69,35 @@ def test_success_requires_save_sentinel(tmp_path: Path, monkeypatch) -> None:
     assert finished["status"] == "succeeded"
     assert output.read_bytes() == b"seed"
     assert (Path(finished["job_dir"]) / "stdout.log").read_text(encoding="utf-8") == "done"
+
+
+def test_operation_manifest_is_durable_but_does_not_change_lisp(tmp_path: Path, monkeypatch) -> None:
+    executable = tmp_path / "accoreconsole.exe"
+    template = tmp_path / "acadiso.dwt"
+    executable.write_bytes(b"exe")
+    template.write_bytes(b"seed")
+
+    class FakeProcess:
+        pid = 124
+        returncode = 0
+
+        def __init__(self, args, **kwargs):
+            self.script = Path(args[4])
+
+        def communicate(self, timeout=None):
+            (self.script.parent / "success.txt").write_text("ok\n", encoding="utf-8")
+            return b"done", b""
+
+        def poll(self): return self.returncode
+        def terminate(self): self.returncode = 1
+        def kill(self): self.returncode = 1
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    manager = core.CoreConsoleJobManager(tmp_path, executable, template)
+    manifest = [{"operation_id": "op-hole", "intent": "subtract through hole"}]
+    job = manager.start("(command \"_.BOX\")", str(tmp_path / "out.dwg"), operation_manifest=manifest)
+    finished = wait_for_terminal(manager, job["job_id"])
+    request = __import__("json").loads((Path(finished["job_dir"]) / "request.json").read_text())
+    assert request["operation_manifest"] == manifest
+    assert finished["operation_manifest"] == [{**manifest[0], "observed_entity_handles": []}]
+    assert '(command "_.BOX")' in (Path(finished["job_dir"]) / "payload.lsp").read_text()
