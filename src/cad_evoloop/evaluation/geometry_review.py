@@ -61,6 +61,54 @@ def _file_evidence(path: Path) -> dict[str, Any] | None:
     return {"sha256": sha256_file(path), "bytes": path.stat().st_size}
 
 
+def _feature_backfill_index(
+    root: Path | None, campaign_manifest: dict[str, Any], manifest_path: Path,
+) -> tuple[dict[tuple[str, str, str], dict[str, Any]], dict[str, Any] | None]:
+    if root is None:
+        return {}, None
+    root = root.resolve()
+    backfill_manifest_path = root / "backfill-manifest.json"
+    backfill_manifest = _read_json(backfill_manifest_path)
+    if not isinstance(backfill_manifest, dict):
+        raise ValueError(f"Invalid feature backfill: {root}")
+    source = backfill_manifest.get("source_campaign") or {}
+    if source.get("campaign_id") != campaign_manifest.get("campaign_id"):
+        raise ValueError("Feature backfill targets a different campaign")
+    if source.get("campaign_manifest_sha256") != sha256_file(manifest_path):
+        raise ValueError("Feature backfill campaign binding does not match")
+    index = {}
+    for record_path in root.glob("**/record.json"):
+        record = _read_json(record_path)
+        if not isinstance(record, dict) or record.get("status") != "completed":
+            continue
+        artifacts = record.get("artifacts") or {}
+        resolved = {}
+        for name in ("verdict", "topology", "face_query"):
+            item = artifacts.get(name)
+            if not item:
+                continue
+            path = Path(item["path"]).resolve()
+            try:
+                path.relative_to(root)
+            except ValueError as exc:
+                raise ValueError(f"Feature backfill artifact escapes its root: {path}") from exc
+            if not path.is_file() or sha256_file(path) != item.get("sha256"):
+                raise ValueError(f"Feature backfill artifact hash mismatch: {path}")
+            resolved[name] = path
+        key = (
+            str(record["sample_id"]), str(record["model"]),
+            str(record["selected_attempt_id"]),
+        )
+        index[key] = {"record": record, "record_path": record_path, **resolved}
+    binding = {
+        "protocol": backfill_manifest.get("protocol"),
+        "manifest_sha256": backfill_manifest.get("manifest_sha256"),
+        "manifest_file_sha256": sha256_file(backfill_manifest_path),
+        "completed_checkpoint_count": len(index),
+    }
+    return index, binding
+
+
 def _copy_asset(source: Path, assets: Path, name: str) -> str | None:
     if not source.is_file():
         return None
@@ -302,6 +350,7 @@ def generate_geometry_review_bundle(
     source_manifest: str | Path | None = None,
     annotations_path: str | Path | None = None,
     render_geometry: bool = False,
+    feature_backfill: str | Path | None = None,
 ) -> dict[str, Any]:
     """Create a self-contained review bundle from cached campaign artifacts."""
     campaign_dir = Path(campaign_dir).resolve()
@@ -316,6 +365,9 @@ def generate_geometry_review_bundle(
     results = _read_json(campaign_dir / "results.json")
     if not isinstance(manifest, dict) or not isinstance(results, list):
         raise ValueError(f"Incomplete geometry campaign: {campaign_dir}")
+    backfill_index, backfill_binding = _feature_backfill_index(
+        Path(feature_backfill) if feature_backfill else None, manifest, manifest_path,
+    )
     expected_source = manifest.get("source_manifest_sha256", "")
     resolved_source = Path(source_manifest).resolve() if source_manifest else _find_source_manifest(
         workspace, expected_source,
@@ -381,6 +433,11 @@ def generate_geometry_review_bundle(
             candidate_path = attempt_dir / "candidate.stl"
             candidate_topology_path = attempt_dir / "candidate-topology.json"
             face_query_path = attempt_dir / "face-query.json"
+            backfill = backfill_index.get((sample_id, model, attempt_id))
+            if backfill:
+                verdict_path = backfill.get("verdict", verdict_path)
+                candidate_topology_path = backfill.get("topology", candidate_topology_path)
+                face_query_path = backfill.get("face_query", face_query_path)
             parse_errors = []
             try:
                 verdict = _read_json(verdict_path, {})
@@ -556,6 +613,10 @@ def generate_geometry_review_bundle(
                     "safety_stop_reason",
                 )},
                 "selected": attempt_id == result.get("selected_attempt_id"),
+                "derived_feature_backfill": {
+                    "applied": bool(backfill),
+                    "record_sha256": sha256_file(backfill["record_path"]) if backfill else None,
+                },
                 "verdict": verdict,
                 "reflection": reflection,
                 "feedback_packet": feedback_packet,
@@ -638,6 +699,7 @@ def generate_geometry_review_bundle(
         "models": [item.get("name") for item in manifest.get("models", [])],
         "source_manifest_available": bool(resolved_source),
         "render_geometry": render_geometry,
+        "feature_backfill": backfill_binding,
         "runs": runs,
     }
     payload["bundle_sha256"] = _canonical_sha256(payload)

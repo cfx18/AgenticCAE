@@ -245,7 +245,9 @@ function renderMcp(attempt) {
 
 function renderReviewPanel(run, attempt) {
   $("reviewTarget").textContent = `${run.sample_key} · ${attempt.attempt_id}`;
-  $("reviewBinding").innerHTML = `<span>Review binds to this exact evidence</span><code>${shortHash(attempt.evidence_sha256)}</code>${attempt.selected ? `<strong>Campaign-selected attempt</strong>` : `<strong class="warning">Not the campaign-selected attempt</strong>`}`;
+  const derived = attempt.derived_feature_backfill?.applied
+    ? `<strong class="warning">Post-hoc native topology evidence</strong>` : "";
+  $("reviewBinding").innerHTML = `<span>Review binds to this exact evidence</span><code>${shortHash(attempt.evidence_sha256)}</code>${attempt.selected ? `<strong>Campaign-selected attempt</strong>` : `<strong class="warning">Not the campaign-selected attempt</strong>`}${derived}`;
   const history = targetReviews(run.target_id, attempt.attempt_id);
   $("historyCount").textContent = `${history.length} active`;
   $("reviewHistory").innerHTML = history.map((record) => `<article><div><strong>${escapeHtml(record.reviewer.id)}</strong><span>${escapeHtml(record.created_at)}</span></div><div><span class="decision ${escapeHtml(record.verifier_decision)}">${escapeHtml(record.verifier_decision.replaceAll("_", " "))}</span><span>${escapeHtml(record.recommended_action.replaceAll("_", " "))}</span></div><p>${escapeHtml(record.notes || "No notes")}</p><button type="button" class="secondary revise" data-review="${record.review_id}">Revise</button></article>`).join("") || `<div class="empty">No active human review for this attempt.</div>`;

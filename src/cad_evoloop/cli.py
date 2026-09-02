@@ -20,6 +20,7 @@ from .evaluation.geometry_campaign import run_geometry_campaign
 from .evaluation.agent_geometry_campaign import run_agent_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
 from .evaluation.geometry_review import generate_geometry_review_bundle
+from .evaluation.geometry_feature_backfill import backfill_geometry_features
 from .evaluation.agent_geometry_report import generate_agent_geometry_report
 from .evaluation.geometry_split import write_geometry_split
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
@@ -235,6 +236,26 @@ def _batch_geometry() -> None:
     print(json.dumps(result, ensure_ascii=False))
 
 
+def _backfill_geometry_features() -> None:
+    parser = argparse.ArgumentParser(
+        description="Backfill native face localization for frozen selected checkpoints",
+    )
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--source-manifest", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--samples", type=int, default=20000)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--max-jobs", type=int)
+    args = parser.parse_args()
+    result = backfill_geometry_features(
+        args.campaign_dir, args.source_manifest, args.output,
+        sample_count=args.samples, voxel_resolution=args.voxel_resolution,
+        timeout=args.timeout, max_jobs=args.max_jobs,
+    )
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def _batch_agent_geometry() -> None:
     parser = argparse.ArgumentParser(description="Run frozen geometry through the durable agent")
     parser.add_argument("manifest", type=Path)
@@ -326,6 +347,7 @@ def _export_geometry_review() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-manifest", type=Path)
     parser.add_argument("--annotations", type=Path)
+    parser.add_argument("--feature-backfill", type=Path)
     parser.add_argument("--render-geometry", action="store_true")
     args = parser.parse_args()
     payload = generate_geometry_review_bundle(
@@ -334,6 +356,7 @@ def _export_geometry_review() -> None:
         source_manifest=args.source_manifest,
         annotations_path=args.annotations,
         render_geometry=args.render_geometry,
+        feature_backfill=args.feature_backfill,
     )
     print(json.dumps({
         "campaign_id": payload["campaign"]["campaign_id"],
@@ -418,6 +441,9 @@ def main() -> None:
         "geometry-calibrate": (_calibrate_geometry, "calibrate STEP/STL ground-truth pairs"),
         "geometry-export": (_export_geometry, "export DWG solids for geometry scoring"),
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
+        "geometry-feature-backfill": (
+            _backfill_geometry_features, "backfill native face localization",
+        ),
         "agent-geometry-batch": (_batch_agent_geometry, "run geometry through the durable agent"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
         "agent-geometry-report": (

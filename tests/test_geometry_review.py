@@ -149,6 +149,52 @@ def test_geometry_review_bundle_exports_attempt_evidence(tmp_path: Path) -> None
     assert payload["review_system"]["render_protocol"]["id"] == "evocad-orthographic-evidence-v1"
 
 
+def test_geometry_review_can_bind_post_hoc_feature_evidence(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    backfill = workspace / "reports/backfill"
+    derived = backfill / "sample-1/model-a/a001"
+    derived.mkdir(parents=True)
+    verdict = derived / "geometry-verdict.json"
+    topology = derived / "candidate-topology.json"
+    query = derived / "face-query.json"
+    verdict.write_text(json.dumps({
+        "score": 82, "passed": False, "mismatch": {"localization": {
+            "native_topology": {"face_count": 1}, "regions": [],
+        }},
+    }), encoding="utf-8")
+    topology.write_text(json.dumps({
+        "schema_version": "1.0", "entities": [{"handle": "1", "faces": []}],
+    }), encoding="utf-8")
+    query.write_text(json.dumps({"queries": []}), encoding="utf-8")
+    record = {
+        "status": "completed", "sample_id": "sample:1", "model": "model-a",
+        "selected_attempt_id": "a001", "artifacts": {
+            name: {"path": str(path), "sha256": sha256_file(path)}
+            for name, path in (("verdict", verdict), ("topology", topology), ("face_query", query))
+        },
+    }
+    (derived / "record.json").write_text(json.dumps(record), encoding="utf-8")
+    campaign_manifest = campaign / "campaign-manifest.json"
+    (backfill / "backfill-manifest.json").write_text(json.dumps({
+        "protocol": "evocad-native-feature-backfill-v1", "manifest_sha256": "backfill",
+        "source_campaign": {
+            "campaign_id": "pilot",
+            "campaign_manifest_sha256": sha256_file(campaign_manifest),
+        },
+    }), encoding="utf-8")
+
+    payload = generate_geometry_review_bundle(
+        campaign, workspace / "reports/review", source_manifest=source,
+        feature_backfill=backfill,
+    )
+
+    attempt = payload["runs"][0]["attempts"][0]
+    assert payload["feature_backfill"]["completed_checkpoint_count"] == 1
+    assert attempt["derived_feature_backfill"]["applied"] is True
+    assert attempt["verdict"]["mismatch"]["localization"]["native_topology"]["face_count"] == 1
+    assert attempt["evidence"]["verdict"]["sha256"] == sha256_file(verdict)
+
+
 def test_human_review_ledger_binds_revisions_and_detects_tampering(tmp_path: Path) -> None:
     campaign, source, workspace = _campaign(tmp_path)
     output = workspace / "reports/review"

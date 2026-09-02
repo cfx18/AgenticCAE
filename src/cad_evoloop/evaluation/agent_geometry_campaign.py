@@ -71,8 +71,11 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
     paths = sorted((workspace / "src/cad_evoloop/agent").rglob("*.py"))
     paths.extend([
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
+        workspace / "src/cad_evoloop/backends/autocad/topology.py",
+        workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
