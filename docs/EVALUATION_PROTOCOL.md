@@ -56,6 +56,28 @@ verifier, harness, or task and record a system-change proposal. Fixed campaigns
 do not mutate shared components mid-run; those proposals enter the versioned
 outer improvement workflow and require separate validation before adoption.
 
+## Human Feedback Boundary
+
+Human adjudications are append-only records bound to the exact review bundle,
+attempt evidence, candidate, and verifier verdict. Before an Agent can consume
+them, `geometry-review-ingest` verifies the review chain and emits a separate
+`evocad-human-feedback-v1` manifest. Agent-visible feedback excludes reviewer
+identity and retains the engineering findings plus evidence hashes.
+
+Feedback never modifies or resumes the source frozen campaign. It creates a new
+campaign condition and routes each reviewed sample as follows:
+
+- `agent_repair`: the next modeling turn receives the findings as untrusted
+  engineering evidence and must reconstruct and reverify the candidate;
+- `human_clarification`: the durable project blocks until a typed clarification
+  response is attached, then resumes from the same event-sourced project;
+- `system_improvement`: the finding is queued outside the fixed sample run;
+- `evaluation_only`: the adjudication is retained without changing Agent input.
+
+The new campaign manifest binds the feedback manifest digest, review bundle
+digest, review ledger file digest, and review ledger head. Results after human
+feedback are reported separately from Pass@1 and the original frozen result.
+
 ## Primary Metric
 
 Evidence-Qualified Completion (EQC) is computed from check-level evidence:
@@ -104,6 +126,12 @@ cad-evoloop campaign-verify path/to/campaign-manifest.json
 cad-evoloop report path/to/campaign --output reports/generated/campaign-name
 cad-evoloop verifier-replay path/to/campaign --campaign calibration-name `
   --output evals/cad-1000-hours/improvement/campaigns/calibration-name
+cad-evoloop geometry-review-ingest path/to/review-data.json path/to/reviews.jsonl `
+  --output reports/generated/campaign-human-feedback/human-feedback-v1.json
+cad-evoloop agent-geometry-batch path/to/manifest.json path/to/selection.json `
+  --campaign campaign-human-feedback-v1 --human-feedback path/to/human-feedback-v1.json `
+  --feedback-only
+cad-evoloop agent-clarification-submit path/to/project path/to/response.json
 ```
 
 `verifier-replay` reuses the selected native DWG checkpoints from a completed

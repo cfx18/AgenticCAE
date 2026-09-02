@@ -14,6 +14,10 @@ from cad_evoloop.evaluation.human_review import (
     HumanReviewStore,
     _ReviewServer,
 )
+from cad_evoloop.evaluation.review_feedback import (
+    ingest_human_reviews,
+    load_human_feedback,
+)
 from cad_evoloop.ledger.ledger import sha256_file
 
 
@@ -183,6 +187,39 @@ def test_human_review_rejects_changed_visual_evidence(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="bundle integrity failed"):
         store.append(_submission(payload["runs"][0]["target_id"]))
+
+
+def test_verified_reviews_compile_to_deidentified_agent_feedback(tmp_path: Path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    output = workspace / "reports/review"
+    payload = generate_geometry_review_bundle(campaign, output, source_manifest=source)
+    ledger = workspace / "reviews.jsonl"
+    store = HumanReviewStore(output / "review-data.json", ledger)
+    submission = {
+        **_submission(payload["runs"][0]["target_id"]),
+        "issue_types": ["input_ambiguity"],
+        "recommended_action": "needs_expert",
+        "notes": "The first step height is missing; ask the engineer before modeling.",
+    }
+    store.append(submission)
+    feedback_path = workspace / "feedback.json"
+
+    feedback = ingest_human_reviews(output / "review-data.json", ledger, feedback_path)
+    _, loaded = load_human_feedback(feedback_path)
+
+    sample = loaded["samples"]["sample:1"]
+    assert feedback["active_review_count"] == 1
+    assert sample["route"] == "human_clarification"
+    assert sample["requires_human_clarification"] is True
+    assert "first step height" in sample["clarification_questions"][0]
+    assert "reviewer-1" not in feedback_path.read_text(encoding="utf-8")
+    assert loaded["source"]["review_ledger_head_sha256"]
+
+    value = json.loads(feedback_path.read_text(encoding="utf-8"))
+    value["active_review_count"] = 2
+    feedback_path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ValueError, match="digest mismatch"):
+        load_human_feedback(feedback_path)
 
 
 def test_geometry_review_frontend_contains_required_review_surfaces() -> None:

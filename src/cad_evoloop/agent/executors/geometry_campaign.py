@@ -54,6 +54,21 @@ class GeometryCampaignExecutor:
                 summary="Geometry work unit references an unknown sample",
                 error=f"Unknown geometry sample: {sample_id!r}",
             )
+        feedback_candidates = [
+            artifact for artifact in context.project_state["artifacts"].values()
+            if artifact["kind"] == "human_feedback" and (
+                artifact["artifact_id"] in context.unit["input_artifact_ids"]
+                or artifact.get("producer_work_unit") in context.unit["dependencies"]
+            )
+        ]
+        feedback_artifact = next((
+            artifact for artifact in feedback_candidates
+            if artifact.get("metadata", {}).get("resolved")
+        ), feedback_candidates[0] if feedback_candidates else None)
+        human_feedback = (
+            self.store.project_dir / feedback_artifact["uri"]
+            if feedback_artifact else None
+        )
         result = self.runner(
             manifest_path=self.manifest_path,
             sample=self.samples[sample_id],
@@ -68,9 +83,13 @@ class GeometryCampaignExecutor:
             score_samples=self.config.score_samples,
             voxel_resolution=self.config.voxel_resolution,
             split_path=self.config.split_path,
+            human_feedback=human_feedback,
         )
         job_dir = Path(result["job_dir"])
-        parent_ids = tuple(context.unit["input_artifact_ids"])
+        parent_ids = tuple(dict.fromkeys([
+            *context.unit["input_artifact_ids"],
+            *([feedback_artifact["artifact_id"]] if feedback_artifact else []),
+        ]))
         registered = []
         files = [
             (job_dir / "candidate.dwg", "cad_model", "candidate"),

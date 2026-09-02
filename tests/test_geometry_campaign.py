@@ -251,6 +251,24 @@ def test_stage_agent_inputs_excludes_ground_truth(tmp_path) -> None:
     assert task["output_requirement"].startswith("One native")
 
 
+def test_human_feedback_is_staged_and_bound_to_the_same_sample(tmp_path) -> None:
+    manifest = _manifest(tmp_path)
+    job = tmp_path / "job"
+    geometry_campaign.stage_agent_inputs(manifest, _sample(), job)
+    feedback = tmp_path / "feedback.json"
+    feedback.write_text(json.dumps({
+        "sample_id": "test:1", "route": "agent_repair", "reviews": [],
+    }), encoding="utf-8")
+
+    staged = geometry_campaign.stage_human_feedback(feedback, "test:1", job)
+
+    assert staged == job / "human-feedback.json"
+    task = json.loads((job / "task.json").read_text(encoding="utf-8"))
+    assert task["human_feedback"] == "human-feedback.json"
+    with pytest.raises(ValueError, match="different sample"):
+        geometry_campaign.stage_human_feedback(feedback, "test:2", job)
+
+
 def test_geometry_verdict_is_actionable_without_file_paths() -> None:
     result = {
         "passed": False,

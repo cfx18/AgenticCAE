@@ -147,3 +147,32 @@ Review evidence:
 - review UI verified with 30/30 runs, 3 interactive synchronized geometry
   viewports, loaded input evidence, immutable review records, and no project
   integrity failures.
+
+## 2026-09-02: Human Review Ingestion Preflight
+
+Three active expert adjudications were verified against the formal v2 review
+bundle and its append-only ledger, then compiled into a deidentified
+`evocad-human-feedback-v1` manifest. Reviewer identity remains only in the local
+review ledger and is not exposed to the Agent or committed to source control.
+
+Routing result:
+
+- `omnimech:4`: `agent_repair` for an `agent_geometry` finding;
+- `omnimech:9`: `agent_repair` for an `agent_geometry` finding;
+- `ortho2cad:00241318`: `human_clarification` for `input_ambiguity` and a
+  missing step-height requirement.
+
+Feedback identity:
+
+- source review bundle:
+  `b119237fff25bf2fc712aa7a6e3638eaeb4dad1cd27be484312f630641b2765c`;
+- source review ledger head:
+  `070670ec0302aab872c613fe468c3529dea90bc9b27654544d09a809ea735b57`;
+- feedback manifest:
+  `0d74a974f8380cc499fdbf36574de66db08d4f2d9b206c830a766157b9b669bf`.
+
+A dry run against the unchanged 30-sample selection scheduled exactly those
+three samples under `durable-kernel-human-feedback-v1`: two repairs and one
+durable human gate. No model inference was performed. The follow-up campaign is
+an intervention study and must not replace or be pooled with the original
+30-sample Pass@1 or strict-pass measurements.

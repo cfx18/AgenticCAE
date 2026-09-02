@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "protocol_id": "evocad-human-feedback-v1",
+  "principles": [
+    "verify the immutable review bundle and hash-chained review ledger before ingestion",
+    "exclude reviewer identity from Agent-visible feedback",
+    "bind every feedback campaign to the feedback manifest digest and review ledger head",
+    "never mutate or resume the source frozen campaign with newly revealed human feedback"
+  ],
+  "routes": {
+    "human_clarification": "block geometry until missing requirements are supplied",
+    "agent_repair": "provide prior human findings as evidence in a new reconstruction campaign",
+    "system_improvement": "queue the finding outside the fixed sample run",
+    "evaluation_only": "retain the adjudication without changing Agent behavior"
+  }
+}

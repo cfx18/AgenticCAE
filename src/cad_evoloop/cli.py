@@ -23,6 +23,10 @@ from .evaluation.geometry_review import generate_geometry_review_bundle
 from .evaluation.agent_geometry_report import generate_agent_geometry_report
 from .evaluation.geometry_split import write_geometry_split
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
+from .evaluation.review_feedback import (
+    ingest_human_reviews,
+    submit_human_clarification,
+)
 from .paths import project_root
 from .verification.export_core_console import export_dwg_core
 
@@ -246,6 +250,11 @@ def _batch_agent_geometry() -> None:
     parser.add_argument("--voxel-resolution", type=int, default=64)
     parser.add_argument("--max-jobs", type=int)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--human-feedback", type=Path)
+    parser.add_argument(
+        "--feedback-only", action="store_true",
+        help="schedule only actionable samples in the bound human feedback manifest",
+    )
     args = parser.parse_args()
     result = run_agent_geometry_campaign(
         args.manifest,
@@ -261,6 +270,8 @@ def _batch_agent_geometry() -> None:
         voxel_resolution=args.voxel_resolution,
         max_jobs=args.max_jobs,
         dry_run=args.dry_run,
+        human_feedback=args.human_feedback,
+        feedback_only=args.feedback_only,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -359,6 +370,39 @@ def _verify_geometry_reviews() -> None:
         raise SystemExit(1)
 
 
+def _ingest_geometry_reviews() -> None:
+    parser = argparse.ArgumentParser(
+        description="Compile verified human reviews into Agent feedback artifacts",
+    )
+    parser.add_argument("bundle", type=Path, help="Path to review-data.json")
+    parser.add_argument("reviews", type=Path, help="Path to the review JSONL ledger")
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    result = ingest_human_reviews(args.bundle, args.reviews, args.output)
+    print(json.dumps({
+        "protocol": result["protocol"],
+        "active_reviews": result["active_review_count"],
+        "samples": result["sample_count"],
+        "feedback_manifest_sha256": result["feedback_manifest_sha256"],
+        "output": str(args.output.resolve()),
+    }, indent=2, ensure_ascii=False))
+
+
+def _submit_agent_clarification() -> None:
+    parser = argparse.ArgumentParser(
+        description="Submit a response to a blocked Agent human-clarification gate",
+    )
+    parser.add_argument("project_dir", type=Path)
+    parser.add_argument("response", type=Path)
+    args = parser.parse_args()
+    state = submit_human_clarification(args.project_dir, args.response)
+    print(json.dumps({
+        "project_id": state["project_id"],
+        "project_status": state["status"],
+        "human_clarification_status": state["work_units"]["human-clarification"]["status"],
+    }, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -383,6 +427,12 @@ def main() -> None:
         "geometry-review-export": (_export_geometry_review, "export human-reviewable geometry evidence"),
         "geometry-review-serve": (_serve_geometry_review, "serve the geometry review workbench"),
         "geometry-review-verify": (_verify_geometry_reviews, "verify and summarize human reviews"),
+        "geometry-review-ingest": (
+            _ingest_geometry_reviews, "compile human reviews into Agent feedback",
+        ),
+        "agent-clarification-submit": (
+            _submit_agent_clarification, "resume a project with human clarification",
+        ),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:
         command = sys.argv[1]

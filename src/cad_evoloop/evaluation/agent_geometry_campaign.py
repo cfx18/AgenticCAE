@@ -22,18 +22,24 @@ from cad_evoloop.agent import (
     WorkUnitSpec,
     apply_plan,
 )
-from cad_evoloop.agent.executors import GeometryCampaignExecutor, GeometryCampaignExecutorConfig
+from cad_evoloop.agent.executors import (
+    GeometryCampaignExecutor,
+    GeometryCampaignExecutorConfig,
+    HumanClarificationExecutor,
+)
 from cad_evoloop.evaluation.geometry_campaign import (
     DECISION_RETRY_LIMIT,
     load_geometry_manifest,
     slug,
 )
+from cad_evoloop.evaluation.review_feedback import load_human_feedback
 from cad_evoloop.ledger.ledger import sha256_file
 from cad_evoloop.paths import project_root
 
 
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
 AGENT_CONDITION = "durable-kernel-compat-v1"
+HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-v1"
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
 
 
@@ -65,9 +71,11 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
     paths.extend([
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
+        workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
     ])
     return {
         path.relative_to(workspace).as_posix(): sha256_file(path)
@@ -140,20 +148,26 @@ def build_agent_campaign_manifest(
     score_samples: int,
     voxel_resolution: int,
     runtime_environment: dict[str, Any],
+    effective_sample_ids: list[str] | None = None,
+    human_feedback_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workspace = project_root()
+    effective_sample_ids = effective_sample_ids or selection["sample_ids"]
     value = {
         "schema_version": "1.0",
         "protocol": AGENT_GEOMETRY_PROTOCOL,
-        "agent_condition": AGENT_CONDITION,
+        "agent_condition": (
+            HUMAN_FEEDBACK_CONDITION if human_feedback_binding else AGENT_CONDITION
+        ),
         "campaign_id": campaign,
         "model": {"name": model, "reasoning_effort": effort},
         "selection": {
             "path": selection_path.relative_to(workspace).as_posix(),
             "sha256": sha256_file(selection_path),
             "selection_sha256": selection["selection_sha256"],
-            "sample_count": selection["sample_count"],
-            "sample_ids": selection["sample_ids"],
+            "source_sample_count": selection["sample_count"],
+            "sample_count": len(effective_sample_ids),
+            "sample_ids": effective_sample_ids,
         },
         "source_manifest_sha256": sha256_file(manifest_path),
         "execution": {
@@ -169,6 +183,8 @@ def build_agent_campaign_manifest(
         "runtime_environment": runtime_environment,
         "agent_source_hashes": _agent_source_hashes(workspace),
     }
+    if human_feedback_binding is not None:
+        value["human_feedback"] = human_feedback_binding
     value["campaign_manifest_sha256"] = _canonical_hash(value, "campaign_manifest_sha256")
     return value
 
@@ -186,6 +202,8 @@ def _create_sample_project(
     sample: dict[str, Any],
     manifest_path: Path,
     model: str,
+    sample_feedback: dict[str, Any] | None = None,
+    sample_feedback_path: Path | None = None,
 ) -> ProjectStore:
     project_id = slug(sample["sample_id"])
     project_dir = projects_root / project_id
@@ -199,7 +217,9 @@ def _create_sample_project(
             "campaign": campaign,
             "sample_id": sample["sample_id"],
             "model": model,
-            "agent_condition": AGENT_CONDITION,
+            "agent_condition": (
+                HUMAN_FEEDBACK_CONDITION if sample_feedback else AGENT_CONDITION
+            ),
         },
     )
     input_ids = []
@@ -213,14 +233,53 @@ def _create_sample_project(
             actor="campaign",
         )
         input_ids.append(artifact_id)
+    feedback_id = None
+    if sample_feedback is not None:
+        if sample_feedback_path is None:
+            raise ValueError("Sample feedback path is required for human feedback")
+        feedback_id = "human-feedback"
+        store.register_artifact(
+            sample_feedback_path,
+            artifact_id=feedback_id,
+            kind="human_feedback",
+            metadata={
+                "sample_id": sample["sample_id"],
+                "route": sample_feedback["route"],
+                "visible_to_agent": True,
+            },
+            actor="campaign",
+        )
+        input_ids.append(feedback_id)
+    requirements = [ArtifactRequirement("design_evidence", len(sample["input_images"]))]
+    if feedback_id:
+        requirements.append(ArtifactRequirement("human_feedback"))
     contract = StageContract(
         contract_id="geometry-strict-gate-v1",
         stage="geometry",
-        input_requirements=(ArtifactRequirement("design_evidence", len(input_ids)),),
+        input_requirements=tuple(requirements),
         output_requirements=(ArtifactRequirement("cad_model"),),
         verifier_ids=("native-geometry", "strict-geometry"),
         description="Native candidate exists and strict geometry metrics pass",
     )
+    dependencies = ()
+    work_units = []
+    if sample_feedback and sample_feedback["route"] == "human_clarification":
+        clarification = WorkUnitSpec(
+            unit_id="human-clarification",
+            kind="human_clarification",
+            phase="requirements",
+            title="Human clarification",
+            description="Wait for missing or ambiguous engineering requirements",
+            acceptance_criteria=("A bound human clarification response is available",),
+            input_artifact_ids=tuple(input_ids),
+            max_attempts=2,
+            parameters={
+                "sample_id": sample["sample_id"],
+                "feedback_artifact_id": feedback_id,
+            },
+        )
+        work_units.append(clarification)
+        dependencies = (clarification.unit_id,)
     unit = WorkUnitSpec(
         unit_id="geometry-reconstruction",
         kind="geometry_campaign",
@@ -230,15 +289,24 @@ def _create_sample_project(
         acceptance_criteria=("Strict geometry contract passes",),
         contract_id=contract.contract_id,
         input_artifact_ids=tuple(input_ids),
+        dependencies=dependencies,
         max_attempts=1,
         parameters={"sample_id": sample["sample_id"]},
     )
+    work_units.append(unit)
     apply_plan(store, EngineeringPlan(
-        plan_id="geometry-agent-plan-v1",
+        plan_id=(
+            "geometry-agent-plan-human-feedback-v1"
+            if sample_feedback else "geometry-agent-plan-v1"
+        ),
         objective="Produce one native editable solid that strict-matches evaluator geometry",
-        work_units=(unit,),
+        work_units=tuple(work_units),
         contracts=(contract,),
-        rationale="Semantic-parity bridge from the recorded v2 loop into the durable kernel",
+        rationale=(
+            "Hash-bound human review feedback with a clarification gate"
+            if sample_feedback else
+            "Semantic-parity bridge from the recorded v2 loop into the durable kernel"
+        ),
     ), actor="campaign")
     return store
 
@@ -259,6 +327,8 @@ def run_agent_geometry_campaign(
     voxel_resolution: int = 64,
     max_jobs: int | None = None,
     dry_run: bool = False,
+    human_feedback: str | Path | None = None,
+    feedback_only: bool = False,
 ) -> dict[str, Any]:
     if max_jobs is not None and max_jobs < 1:
         raise ValueError("max_jobs must be positive")
@@ -273,6 +343,52 @@ def run_agent_geometry_campaign(
     missing = [sample_id for sample_id in selection_value["sample_ids"] if sample_id not in by_id]
     if missing:
         raise ValueError(f"Frozen selection references missing samples: {missing}")
+    feedback_path = None
+    feedback_value = None
+    feedback_binding = None
+    if human_feedback is not None:
+        feedback_path, feedback_value = load_human_feedback(human_feedback)
+        if (
+            feedback_value["source"].get("source_manifest_sha256")
+            != sha256_file(manifest_path)
+        ):
+            raise ValueError("Human feedback was produced for a different geometry manifest")
+        unknown_feedback = set(feedback_value["sample_ids"]) - set(by_id)
+        if unknown_feedback:
+            raise ValueError(
+                f"Human feedback references unknown samples: {sorted(unknown_feedback)}"
+            )
+        workspace = project_root()
+        try:
+            relative_feedback = feedback_path.relative_to(workspace).as_posix()
+        except ValueError as exc:
+            raise ValueError("Human feedback must be stored inside the workspace") from exc
+        feedback_binding = {
+            "path": relative_feedback,
+            "sha256": sha256_file(feedback_path),
+            "feedback_manifest_sha256": feedback_value["feedback_manifest_sha256"],
+            "review_bundle_sha256": feedback_value["source"]["review_bundle_sha256"],
+            "review_ledger_sha256": feedback_value["source"]["review_ledger_sha256"],
+            "review_ledger_head_sha256": feedback_value["source"][
+                "review_ledger_head_sha256"
+            ],
+            "active_review_count": feedback_value["active_review_count"],
+            "sample_count": feedback_value["sample_count"],
+            "feedback_only": feedback_only,
+        }
+    elif feedback_only:
+        raise ValueError("feedback_only requires a human feedback manifest")
+    effective_sample_ids = list(selection_value["sample_ids"])
+    if feedback_only:
+        feedback_ids = {
+            sample_id for sample_id, sample_feedback in feedback_value["samples"].items()
+            if sample_feedback["route"] in {"human_clarification", "agent_repair"}
+        }
+        effective_sample_ids = [
+            sample_id for sample_id in effective_sample_ids if sample_id in feedback_ids
+        ]
+        if not effective_sample_ids:
+            raise ValueError("Human feedback does not overlap the frozen selection")
     campaign_dir = project_root() / "evals/geometry-benchmarks/batch" / campaign
     campaign_dir.mkdir(parents=True, exist_ok=True)
     campaign_manifest = build_agent_campaign_manifest(
@@ -289,6 +405,8 @@ def run_agent_geometry_campaign(
         score_samples=score_samples,
         voxel_resolution=voxel_resolution,
         runtime_environment=runtime_environment,
+        effective_sample_ids=effective_sample_ids,
+        human_feedback_binding=feedback_binding,
     )
     campaign_manifest_path = campaign_dir / "agent-campaign-manifest.json"
     if campaign_manifest_path.is_file():
@@ -299,8 +417,15 @@ def run_agent_geometry_campaign(
     plan = {
         "campaign": campaign,
         "jobs": [
-            {"sample_id": sample_id, "project_id": slug(sample_id), "model": model}
-            for sample_id in selection_value["sample_ids"]
+            {
+                "sample_id": sample_id,
+                "project_id": slug(sample_id),
+                "model": model,
+                **({
+                    "feedback_route": feedback_value["samples"][sample_id]["route"],
+                } if feedback_value and sample_id in feedback_value["samples"] else {}),
+            }
+            for sample_id in effective_sample_ids
         ],
     }
     _write_json_atomic(campaign_dir / "agent-plan.json", plan)
@@ -309,7 +434,10 @@ def run_agent_geometry_campaign(
 
     results_path = campaign_dir / "agent-results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else []
-    completed = {item["sample_id"] for item in results}
+    completed = {
+        item["sample_id"] for item in results
+        if item.get("work_unit_status") in {"succeeded", "failed"}
+    }
     projects_root = campaign_dir / "projects"
     projects_root.mkdir(exist_ok=True)
     executor_config = GeometryCampaignExecutorConfig(
@@ -327,26 +455,45 @@ def run_agent_geometry_campaign(
         split_path=selection_path,
     )
     scheduled_this_run = 0
-    for sample_id in selection_value["sample_ids"]:
+    feedback_dir = campaign_dir / "human-feedback"
+    for sample_id in effective_sample_ids:
         if sample_id in completed:
             continue
         if max_jobs is not None and scheduled_this_run >= max_jobs:
             break
+        sample_feedback = (
+            feedback_value["samples"].get(sample_id) if feedback_value else None
+        )
+        if sample_feedback and sample_feedback["route"] not in {
+            "human_clarification", "agent_repair",
+        }:
+            sample_feedback = None
+        sample_feedback_path = None
+        if sample_feedback is not None:
+            feedback_dir.mkdir(exist_ok=True)
+            sample_feedback_path = feedback_dir / f"{slug(sample_id)}.json"
+            _write_json_atomic(sample_feedback_path, sample_feedback)
         store = _create_sample_project(
             projects_root=projects_root,
             campaign=campaign,
             sample=by_id[sample_id],
             manifest_path=manifest_path,
             model=model,
+            sample_feedback=sample_feedback,
+            sample_feedback_path=sample_feedback_path,
         )
         kernel = ProjectKernel(
             store,
-            {"geometry_campaign": GeometryCampaignExecutor(store, executor_config)},
+            {
+                "geometry_campaign": GeometryCampaignExecutor(store, executor_config),
+                "human_clarification": HumanClarificationExecutor(store),
+            },
         )
         kernel.recover_interrupted(actor="campaign")
         kernel.run(actor="campaign")
         state = store.load()
         unit = state["work_units"]["geometry-reconstruction"]
+        clarification = state["work_units"].get("human-clarification")
         if unit["status"] == "failed" and state["status"] == "active":
             state = store.append(
                 "project.failed",
@@ -355,32 +502,44 @@ def run_agent_geometry_campaign(
                 idempotency_key="project.failed:geometry-work-unit",
             )
         evidence = unit["evidence"][-1] if unit["evidence"] else {}
-        results.append({
+        work_unit_status = unit["status"]
+        if clarification and clarification["status"] == "blocked":
+            evidence = clarification["evidence"][-1] if clarification["evidence"] else {}
+            work_unit_status = "blocked"
+        row = {
             "sample_id": sample_id,
             "project_id": store.project_id,
             "project_status": state["status"],
-            "work_unit_status": unit["status"],
+            "work_unit_status": work_unit_status,
             "passed": unit["status"] == "succeeded",
             "score": evidence.get("score", 0.0),
             "stop_reason": evidence.get("stop_reason"),
+            "clarification_questions": evidence.get("questions", []),
             "attempts": evidence.get("attempts", 0),
             "result": evidence.get("result"),
             "project_events": state["last_sequence"],
             "project_integrity": store.verify(),
-        })
+        }
+        results = [item for item in results if item["sample_id"] != sample_id]
+        results.append(row)
         _write_json_atomic(results_path, results)
         scheduled_this_run += 1
     summary = {
         "campaign": campaign,
         "sample_count": len(results),
-        "planned_sample_count": selection_value["sample_count"],
-        "complete": len(results) == selection_value["sample_count"],
+        "planned_sample_count": len(effective_sample_ids),
+        "complete": len(results) == len(effective_sample_ids) and all(
+            item["work_unit_status"] in {"succeeded", "failed"} for item in results
+        ),
         "strict_passes": sum(bool(item["passed"]) for item in results),
         "strict_pass_rate": (
             sum(bool(item["passed"]) for item in results) / len(results) if results else 0.0
         ),
         "infrastructure_integrity_failures": sum(
             not item["project_integrity"]["ok"] for item in results
+        ),
+        "human_clarification_required": sum(
+            item["work_unit_status"] == "blocked" for item in results
         ),
     }
     _write_json_atomic(campaign_dir / "agent-summary.json", summary)

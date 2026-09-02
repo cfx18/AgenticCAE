@@ -77,6 +77,12 @@ adjudications under `evals/geometry-benchmarks/human-reviews/`, so verifier
 false positives, false negatives, data defects, and reviewer disagreement can
 be audited against exact evidence versions.
 
+Verified reviews can be compiled into deidentified, hash-bound Agent feedback
+with `cad-evoloop geometry-review-ingest`. A new feedback campaign can then
+repair reviewed samples or block on missing requirements without mutating the
+source frozen campaign. The protocol and commands are documented in
+[docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md).
+
 ## Data and Generated Artifacts
 
 Downloaded CAD-1000-Hours assets, AutoCAD jobs, DWG files, run records, batch
