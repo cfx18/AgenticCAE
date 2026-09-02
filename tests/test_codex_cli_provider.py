@@ -8,6 +8,7 @@ from cad_evoloop.agent.models import CodexCLIConfig, CodexCLIProvider, ModelRequ
 
 
 def fake_codex_run(command, **kwargs):
+    assert kwargs["input"]
     kwargs["stdout"].write(json.dumps({"type": "thread.started", "thread_id": "thread-123"}) + "\n")
     kwargs["stdout"].write(json.dumps({
         "type": "turn.completed",
@@ -51,6 +52,7 @@ def test_codex_provider_records_a_canonical_turn(tmp_path: Path, monkeypatch) ->
     artifact_dir = Path(turn.provider_metadata["artifacts"]["directory"])
     assert (artifact_dir / "command.json").is_file()
     assert (artifact_dir / "events.jsonl").is_file()
+    assert (artifact_dir / "prompt.txt").read_text(encoding="utf-8").startswith("Decide")
     command = json.loads((artifact_dir / "command.json").read_text(encoding="utf-8"))
     assert command[command.index("--model") + 1] == "gpt-5.6-sol"
     assert "--output-schema" in command
@@ -66,7 +68,7 @@ def test_codex_provider_resumes_provider_thread_without_changing_domain_identity
 
     command_path = Path(turn.provider_metadata["artifacts"]["directory"]) / "command.json"
     command = json.loads(command_path.read_text(encoding="utf-8"))
-    assert command[-3:] == ["resume", "thread-123", "Continue"]
+    assert command[-3:] == ["resume", "thread-123", "-"]
     assert resumed.conversation_id == handle.conversation_id
     assert resumed.opaque_state != handle.opaque_state
 

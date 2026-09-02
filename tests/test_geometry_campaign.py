@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -234,8 +235,30 @@ def test_decision_transport_retry_recovers_without_consuming_geometry_attempt(
     assert [turn["valid"] for turn in attempt["decision_attempts"]] == [False, True]
     attempt_dir = Path(result["job_dir"]) / "attempts/a001"
     assert (attempt_dir / "decision-turns/t01/events.jsonl").is_file()
+    assert (attempt_dir / "decision-turns/t01/prompt.txt").is_file()
     assert (attempt_dir / "decision-turns/t02/reflection.json").is_file()
     assert json.loads((attempt_dir / "reflection.json").read_text())["decision"] == "stop"
+
+
+def test_codex_process_transports_long_prompt_through_stdin(tmp_path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(geometry_campaign.subprocess, "run", fake_run)
+    prompt = "verifier feedback\n" + "x" * 100_000
+    result = geometry_campaign._run_codex_process(
+        ["codex", "exec", "resume", "thread", "-"], cwd=tmp_path,
+        events_path=tmp_path / "events.jsonl", stderr_path=tmp_path / "stderr.log",
+        timeout=180, stdin_text=prompt,
+    )
+
+    assert result == (0, False)
+    assert captured["input"] == prompt
+    assert captured["stdin"] is None
+    assert max(map(len, captured["command"])) < 100
 
 
 def test_stage_agent_inputs_excludes_ground_truth(tmp_path) -> None:
@@ -417,6 +440,8 @@ def test_codex_command_mounts_only_audited_autocad_server(tmp_path, monkeypatch)
     assert "AUTOCAD_MCP_AUDIT_PATH" in encoded
     assert "ground_truth" not in encoded
     assert str(image) in command
+    assert command[-1] == "-"
+    assert "prompt" not in command
     assert "--ephemeral" not in command
 
 
@@ -434,8 +459,10 @@ def test_codex_resume_keeps_thread_and_separates_feedback_from_cad(tmp_path, mon
     )
 
     assert "resume" in action and "thread-1" in action
+    assert action[-1] == "-"
     assert "mcp_servers.autocad.command=\"python\"" in action
     assert "resume" in decision and "thread-1" in decision
+    assert decision[-1] == "-"
     assert not any("mcp_servers.autocad" in value for value in decision)
     assert "--output-schema" in decision
 

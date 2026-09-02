@@ -292,6 +292,7 @@ def codex_command(
         final_path=final_path,
         images=tuple(images),
         config_overrides=overrides,
+        prompt_via_stdin=True,
     )
 
 
@@ -339,6 +340,7 @@ def codex_resume_command(
         thread_id=thread_id,
         output_schema=output_schema,
         config_overrides=tuple(overrides),
+        prompt_via_stdin=True,
     )
 
 
@@ -521,6 +523,7 @@ def _run_codex_process(
     events_path: Path,
     stderr_path: Path,
     timeout: int,
+    stdin_text: str | None = None,
 ) -> tuple[int | None, bool]:
     return_code = None
     timed_out = False
@@ -531,7 +534,8 @@ def _run_codex_process(
             completed = subprocess.run(
                 command,
                 cwd=cwd,
-                stdin=subprocess.DEVNULL,
+                input=stdin_text,
+                stdin=subprocess.DEVNULL if stdin_text is None else None,
                 stdout=stdout,
                 stderr=stderr,
                 text=True,
@@ -600,13 +604,15 @@ def _run_decision_with_retries(
                 "Re-evaluate the same feedback packet and return only a valid schema-conforming "
                 "decision. Do not perform CAD operations in this turn."
             )
+        turn_prompt = prompt + retry_note
+        (turn_dir / "prompt.txt").write_text(turn_prompt, encoding="utf-8", newline="\n")
         command = codex_resume_command(
             executable,
             model,
             effort,
             job_dir,
             thread_id,
-            prompt + retry_note,
+            turn_prompt,
             output_path,
             with_autocad=False,
             output_schema=output_schema,
@@ -617,6 +623,7 @@ def _run_decision_with_retries(
             events_path=turn_events,
             stderr_path=turn_stderr,
             timeout=remaining_attempt_timeout(turn_timeout, remaining),
+            stdin_text=turn_prompt,
         )
         event_data = _read_codex_events(turn_events)
         event_values.append(event_data)
@@ -791,6 +798,7 @@ def run_geometry_job(
         events_path = attempt_dir / "codex-events.jsonl"
         stderr_path = attempt_dir / "codex-stderr.log"
         final_path = attempt_dir / "codex-final.txt"
+        action_prompt_path = attempt_dir / "action-prompt.txt"
         audit_path = attempt_dir / "mcp-audit.jsonl"
         reflection_events_path = attempt_dir / "reflection-events.jsonl"
         reflection_stderr_path = attempt_dir / "reflection-stderr.log"
@@ -819,6 +827,7 @@ def run_geometry_job(
                 executable, model, effort, job_dir, thread_id, prompt,
                 final_path, with_autocad=True, audit_path=audit_path,
             )
+        action_prompt_path.write_text(prompt, encoding="utf-8", newline="\n")
         decision_turn_timeout = min(180, max(30, timeout // 4))
         feedback_reserve = decision_turn_timeout * (DECISION_RETRY_LIMIT + 1)
         attempt_timeout = remaining_attempt_timeout(
@@ -832,10 +841,12 @@ def run_geometry_job(
             events_path=events_path,
             stderr_path=stderr_path,
             timeout=attempt_timeout,
+            stdin_text=prompt,
         )
         action_event_data = _read_codex_events(events_path)
         thread_id = thread_id or action_event_data.get("thread_id")
         for path, role in (
+            (action_prompt_path, "codex-prompt"),
             (events_path, "codex-events"),
             (stderr_path, "codex-stderr"),
             (final_path, "codex-final"),

@@ -45,6 +45,7 @@ def build_codex_exec_command(
     config_overrides: tuple[str, ...] = (),
     isolated: bool = True,
     approve_for_me: bool = True,
+    prompt_via_stdin: bool = False,
 ) -> list[str]:
     command = [executable, "exec", "--skip-git-repo-check"]
     if isolated:
@@ -65,9 +66,9 @@ def build_codex_exec_command(
         command.extend(["--output-schema", str(output_schema)])
     command.extend(["--json", "--output-last-message", str(final_path)])
     if thread_id is not None:
-        command.extend(["resume", thread_id, prompt])
+        command.extend(["resume", thread_id, "-" if prompt_via_stdin else prompt])
     else:
-        command.append(prompt)
+        command.append("-" if prompt_via_stdin else prompt)
     return command
 
 
@@ -148,6 +149,7 @@ class CodexCLIProvider:
         events_path = invocation_dir / "events.jsonl"
         stderr_path = invocation_dir / "stderr.log"
         final_path = invocation_dir / "final.txt"
+        prompt_path = invocation_dir / "prompt.txt"
         schema_path = None
         if request.response_schema is not None:
             schema_path = invocation_dir / "response-schema.json"
@@ -169,7 +171,9 @@ class CodexCLIProvider:
             config_overrides=self.config.config_overrides,
             isolated=self.config.isolated,
             approve_for_me=self.config.approve_for_me,
+            prompt_via_stdin=True,
         )
+        prompt_path.write_text(prompt, encoding="utf-8", newline="\n")
         (invocation_dir / "command.json").write_text(
             json.dumps(command, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
         )
@@ -182,7 +186,7 @@ class CodexCLIProvider:
                 completed = subprocess.run(
                     command,
                     cwd=self.cwd,
-                    stdin=subprocess.DEVNULL,
+                    input=prompt,
                     stdout=stdout,
                     stderr=stderr,
                     text=True,
@@ -219,6 +223,7 @@ class CodexCLIProvider:
                 "stderr": str(stderr_path),
                 "final": str(final_path),
                 "schema": str(schema_path) if schema_path else None,
+                "prompt": str(prompt_path),
             },
         }
         handle = ConversationHandle(
