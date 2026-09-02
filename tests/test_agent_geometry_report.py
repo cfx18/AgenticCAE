@@ -66,6 +66,61 @@ def test_materializes_results_in_frozen_plan_order(tmp_path: Path) -> None:
     assert json.loads((campaign / "campaign-manifest.json").read_text())["models"][0]["name"] == "gpt-5.6-sol"
 
 
+def test_materialization_records_human_block_without_fabricating_result(
+    tmp_path: Path,
+) -> None:
+    campaign = tmp_path / "campaign"
+    campaign.mkdir()
+    manifest = {
+        "protocol": "evocad-agent-geometry-v1",
+        "agent_condition": "durable-kernel-human-feedback-v1",
+        "campaign_id": "feedback-test",
+        "model": {"name": "gpt-5.6-sol", "reasoning_effort": "medium"},
+        "source_manifest_sha256": "a" * 64,
+        "execution": {},
+        "selection": {
+            "path": "selection.json", "selection_sha256": "b" * 64,
+            "sample_count": 2,
+        },
+        "runtime_environment": {},
+        "campaign_manifest_sha256": "c" * 64,
+    }
+    (campaign / "agent-campaign-manifest.json").write_text(json.dumps(manifest))
+    (campaign / "agent-plan.json").write_text(json.dumps({
+        "jobs": [{"sample_id": "sample:1"}, {"sample_id": "sample:2"}],
+    }))
+    result_path = campaign / "sample-1/result.json"
+    result_path.parent.mkdir()
+    result_path.write_text(json.dumps(result("sample:1", 90, False, campaign)))
+    (campaign / "agent-results.json").write_text(json.dumps([
+        {"sample_id": "sample:1", "result": str(result_path)},
+        {
+            "sample_id": "sample:2",
+            "result": None,
+            "project_id": "sample-2",
+            "project_status": "active",
+            "work_unit_status": "blocked",
+            "stop_reason": "human_clarification_required",
+            "clarification_questions": ["What is the first step height?"],
+            "project_integrity": {"ok": True},
+        },
+    ]))
+
+    value = materialize_agent_campaign(campaign)
+
+    assert [row["sample_id"] for row in value["results"]] == ["sample:1"]
+    assert value["provenance"]["complete"] is False
+    assert value["provenance"]["blocked_work_units"] == [{
+        "sample_id": "sample:2",
+        "project_id": "sample-2",
+        "project_status": "active",
+        "work_unit_status": "blocked",
+        "stop_reason": "human_clarification_required",
+        "clarification_questions": ["What is the first step height?"],
+        "project_integrity": {"ok": True},
+    }]
+
+
 def test_compares_only_paired_sol_samples(tmp_path: Path) -> None:
     candidate = [result("sample:1", 100, True, tmp_path), result("sample:2", 80, False, tmp_path)]
     baseline = [result("sample:1", 90, False, tmp_path), result("sample:3", 100, True, tmp_path)]

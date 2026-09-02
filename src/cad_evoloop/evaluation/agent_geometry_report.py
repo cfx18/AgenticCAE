@@ -46,7 +46,23 @@ def materialize_agent_campaign(campaign_dir: str | Path) -> dict[str, Any]:
     plan = _read_json(plan_path)
     order = {job["sample_id"]: index for index, job in enumerate(plan["jobs"])}
     results = []
+    blocked_work_units = []
     for row in agent_rows:
+        if row.get("result") is None:
+            if row.get("work_unit_status") != "blocked":
+                raise ValueError(
+                    f"Agent row has no result outside a blocked work unit: {row['sample_id']}"
+                )
+            blocked_work_units.append({
+                "sample_id": row["sample_id"],
+                "project_id": row.get("project_id"),
+                "project_status": row.get("project_status"),
+                "work_unit_status": row["work_unit_status"],
+                "stop_reason": row.get("stop_reason"),
+                "clarification_questions": row.get("clarification_questions", []),
+                "project_integrity": row.get("project_integrity"),
+            })
+            continue
         result_path = Path(row["result"]).resolve()
         if campaign_dir not in result_path.parents:
             raise ValueError(f"Agent result escapes campaign directory: {result_path}")
@@ -87,8 +103,14 @@ def materialize_agent_campaign(campaign_dir: str | Path) -> dict[str, Any]:
     _write_json_atomic(campaign_dir / "results.json", results)
     provenance = {
         "schema_version": "1.0",
-        "complete": len(results) == agent_manifest["selection"]["sample_count"],
+        "complete": (
+            len(results) == agent_manifest["selection"]["sample_count"]
+            and not blocked_work_units
+        ),
         "materialized_results": len(results),
+        "blocked_work_units": sorted(
+            blocked_work_units, key=lambda row: order[row["sample_id"]],
+        ),
         "agent_manifest_sha256": _sha256(agent_manifest_path),
         "agent_results_sha256": _sha256(agent_results_path),
         "plan_sha256": _sha256(plan_path),

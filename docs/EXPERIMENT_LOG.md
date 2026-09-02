@@ -198,3 +198,42 @@ separates evaluator workflow actions from modeling actions, and embeds the full
 UTF-8 feedback JSON directly in every model and repair prompt. The staged file
 remains an auditable copy. Corrected feedback manifest:
 `b48ccd1a1976c9852ac7ee35b2b6ead6f5e838a410eca6e862bb89cfa68fea3b`.
+
+## 2026-09-02: Human Feedback Campaign V3
+
+Campaign `agent-geometry-30-sol-human-feedback-v3` completed the two repair
+routes and stopped at the intended human gate for the ambiguous sample. It is an
+intervention study over reviewed samples, not a replacement 30-sample score.
+
+Repair outcomes:
+
+- `omnimech:4`: first attempt `11.29`, selected `99.75` at a006 after 8
+  attempts, autonomous stop, no strict pass;
+- `omnimech:9`: first attempt `20.89`, selected `97.92` at a007 after 9
+  attempts, autonomous stop, no strict pass;
+- `ortho2cad:00241318`: blocked before model or CAD execution with
+  `human_clarification_required`; the missing first-step height must be supplied.
+
+Both repair runs improved substantially over their own first attempt, selected
+an earlier best checkpoint after later regressions, and ended without safety or
+runtime censoring. Mean first-attempt score was `16.09`; mean selected score was
+`98.84`. Across 17 attempts the loop recorded 8 recoverable Core Console job
+failures, zero failed MCP calls, and zero project-integrity failures.
+
+Relative to the original v2 selected checkpoints, the specific written review
+for `omnimech:4` improved `99.40` to `99.75`; the label-only review for
+`omnimech:9` regressed `99.86` to `97.92`. This result does not establish a
+general feedback benefit. Future feedback evaluation must stratify by review
+specificity and compare against a no-feedback rerun under the same loop version.
+
+Review artifacts:
+
+- report: `reports/generated/agent-geometry-30-sol-human-feedback-v3/`;
+- two-run 3D review bundle:
+  `reports/generated/agent-geometry-30-sol-human-feedback-v3-review/`;
+- review bundle identity:
+  `cf3e06c6196e584f53c9982cef5f9e0ed45b8c9d2d62479b9360e61b0588ca5d`;
+- local review URL: `http://127.0.0.1:8769/`.
+
+The report materializer records blocked work units separately and excludes them
+from geometry-score aggregates instead of fabricating a zero-score CAD result.
