@@ -1,6 +1,6 @@
 const state = {
   data: null, reviews: null, selectedTarget: null, selectedAttempt: null,
-  inputIndex: 0, reviewStartedAt: Date.now(), filters: { dataset: "all", model: "all", outcome: "all", review: "all" },
+  selectedRegion: null, inputIndex: 0, reviewStartedAt: Date.now(), filters: { dataset: "all", model: "all", outcome: "all", review: "all" },
 };
 let geometryViewers = null;
 let geometryModulePromise = null;
@@ -68,6 +68,7 @@ function selectRun(targetId) {
   if (!run) return;
   state.selectedTarget = targetId;
   state.selectedAttempt = run.selected_attempt_id || run.attempts.at(-1)?.attempt_id;
+  state.selectedRegion = null;
   state.inputIndex = 0;
   state.reviewStartedAt = Date.now();
   resetReviewForm();
@@ -77,6 +78,7 @@ function selectRun(targetId) {
 
 function selectAttempt(attemptId) {
   state.selectedAttempt = attemptId;
+  state.selectedRegion = null;
   state.reviewStartedAt = Date.now();
   resetReviewForm();
   renderRun();
@@ -129,7 +131,7 @@ async function mountGeometryViewers(attempt) {
   geometryViewers?.dispose();
   geometryViewers = null;
   try {
-    geometryModulePromise ||= import("./geometry-viewer.js?v=7");
+    geometryModulePromise ||= import("./geometry-viewer.js?v=8");
     const { createSynchronizedGeometryViewers } = await geometryModulePromise;
     if (generation !== geometryLoadGeneration) return;
     geometryViewers = createSynchronizedGeometryViewers({
@@ -167,6 +169,19 @@ function renderEvidence(run, attempt) {
   $("truthCaption").textContent = `SHA ${shortHash(run.ground_truth_sha256)}`;
   $("candidateState").textContent = `SHA ${shortHash(attempt.evidence?.candidate?.sha256)}`;
   $("overlayState").textContent = attempt.render_error ? `Render error: ${attempt.render_error}` : "Axis-permutation and translation alignment; no scale";
+  const localization = attempt.localization || (attempt.verdict?.mismatch || {}).localization || {};
+  const regions = localization.regions || [];
+  $("localizationRegions").innerHTML = regions.length ? regions.map((region) => {
+    const position = (region.centroid_bbox_position || []).map((value) => fmt(value, 2)).join(", ");
+    const label = region.direction === "ground_truth_to_candidate" ? "Missing" : "Excess";
+    const faces = (region.source_brep_faces || []).slice(0, 2).map((face) => `${face.surface_type}${face.radius == null ? "" : ` R${fmt(face.radius, 2)}`}`).join(" + ");
+    return `<button class="localization-region ${region.direction === "ground_truth_to_candidate" ? "missing" : "excess"} ${state.selectedRegion === region.region_id ? "selected" : ""}" data-region="${escapeHtml(region.region_id)}"><strong>${escapeHtml(region.region_id)}</strong><span>${label}</span><code>p95 ${fmt(region.p95_distance_normalized, 4)}</code><small>bbox position [${escapeHtml(position)}]</small>${faces ? `<small>B-Rep ${escapeHtml(faces)}</small>` : ""}</button>`;
+  }).join("") : `<div class="empty">${attempt.localization_error ? `Localization unavailable: ${escapeHtml(attempt.localization_error)}` : "No surface regions exceed the localization threshold."}</div>`;
+  document.querySelectorAll(".localization-region").forEach((button) => button.addEventListener("click", () => {
+    state.selectedRegion = button.dataset.region;
+    document.querySelectorAll(".localization-region").forEach((item) => item.classList.toggle("selected", item === button));
+    geometryViewers?.focusRegion?.(button.dataset.region);
+  }));
 }
 
 function thresholdText(check) {
@@ -273,7 +288,9 @@ function addFinding(value = {}) {
   wrapper.innerHTML = `<div class="finding-header"><strong>Finding ${index}</strong><button type="button" class="remove-finding">Remove</button></div><div class="two-col"><label>Category<select data-field="category">${FINDING_CATEGORIES.map((key) => `<option value="${key}">${escapeHtml(ISSUE_LABELS[key])}</option>`).join("")}</select></label><label>Severity<select data-field="severity"><option value="note">Note</option><option value="minor">Minor</option><option value="major">Major</option><option value="critical">Critical</option></select></label></div><label>Location<input data-field="location" maxlength="500" placeholder="feature, view, metric, or event"></label><label>Observation<textarea data-field="observation" rows="2" maxlength="4000" required></textarea></label><label>Recommendation<textarea data-field="recommendation" rows="2" maxlength="4000"></textarea></label>`;
   wrapper.querySelector('[data-field="category"]').value = value.category || "agent_geometry";
   wrapper.querySelector('[data-field="severity"]').value = value.severity || "major";
-  ["location", "observation", "recommendation"].forEach((key) => { wrapper.querySelector(`[data-field="${key}"]`).value = value[key] || ""; });
+  ["location", "observation", "recommendation"].forEach((key) => {
+    wrapper.querySelector(`[data-field="${key}"]`).value = value[key] || (key === "location" ? state.selectedRegion || "" : "");
+  });
   wrapper.querySelector(".remove-finding").addEventListener("click", () => wrapper.remove());
   $("findings").appendChild(wrapper);
 }

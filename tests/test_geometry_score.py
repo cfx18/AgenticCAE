@@ -36,6 +36,29 @@ def test_geometry_score_reports_missing_optional_dependencies(monkeypatch) -> No
         geometry_score._dependencies()
 
 
+def test_step_mesh_preserves_triangle_to_brep_face_provenance(tmp_path) -> None:
+    pytest.importorskip("trimesh")
+    pytest.importorskip("OCP")
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+
+    step = tmp_path / "box.step"
+    writer = STEPControl_Writer()
+    assert writer.Transfer(BRepPrimAPI_MakeBox(10, 20, 30).Shape(), STEPControl_AsIs) == IFSelect_RetDone
+    assert writer.Write(str(step)) == IFSelect_RetDone
+
+    mesh = geometry_score._load_mesh(step)
+
+    face_ids = mesh.face_attributes["brep_face_id"]
+    descriptors = mesh.metadata["brep_face_descriptors"]
+    assert len(face_ids) == len(mesh.faces)
+    assert len(set(face_ids)) == 6
+    assert len(descriptors) == 6
+    assert {item["surface_type"] for item in descriptors.values()} == {"plane"}
+    assert all(identifier.startswith("face-") for identifier in descriptors)
+
+
 def test_geometry_score_accepts_identity_and_rejects_scaled_shape(tmp_path) -> None:
     trimesh = pytest.importorskip("trimesh")
     pytest.importorskip("OCP")
@@ -61,9 +84,37 @@ def test_geometry_score_accepts_identity_and_rejects_scaled_shape(tmp_path) -> N
     assert identity["score"] == 100.0
     assert identity["coverage"] == 100.0
     assert identity["mismatch"]["candidate_to_ground_truth"]["max_normalized"] == 0.0
+    assert identity["mismatch"]["localization"]["region_count"] == 0
+    assert identity["mismatch"]["localization"]["uses_evaluator_ground_truth"] is True
+    assert identity["mismatch"]["localization"]["distance_threshold_normalized"] == 0.006
     assert wrong["passed"] is False
     assert wrong["score"] < identity["score"]
     assert wrong["metrics"]["bbox_relative_error"] == pytest.approx(0.2)
+    assert wrong["mismatch"]["localization"]["region_count"] > 0
+    region = wrong["mismatch"]["localization"]["regions"][0]
+    assert region["region_id"].startswith(("excess-", "missing-"))
+    assert len(region["centroid"]) == 3
+    assert region["p95_distance_normalized"] > 0
+
+
+def test_localization_ignores_equivalent_surface_tessellation(tmp_path) -> None:
+    trimesh = pytest.importorskip("trimesh")
+    pytest.importorskip("OCP")
+    coarse = trimesh.creation.box(extents=(10.0, 20.0, 30.0))
+    vertices, faces = trimesh.remesh.subdivide(coarse.vertices, coarse.faces)
+    refined = trimesh.Trimesh(vertices=vertices, faces=faces, process=True)
+    coarse_path = tmp_path / "coarse.stl"
+    refined_path = tmp_path / "refined.stl"
+    coarse.export(coarse_path)
+    refined.export(refined_path)
+
+    result = geometry_score.score_geometry_files(
+        refined_path, coarse_path, sample_count=1000, voxel_resolution=24,
+    )
+
+    assert result["mismatch"]["localization"]["region_count"] == 0
+    assert result["mismatch"]["candidate_to_ground_truth"]["p95_normalized"] == 0.0
+    assert result["mismatch"]["ground_truth_to_candidate"]["p95_normalized"] == 0.0
 
 
 def test_calibrates_only_samples_with_step_and_stl(tmp_path, monkeypatch) -> None:
@@ -83,5 +134,6 @@ def test_calibrates_only_samples_with_step_and_stl(tmp_path, monkeypatch) -> Non
 
     assert result["summary"]["pairs"] == 1
     assert result["summary"]["passed"] == 1
+    assert result["summary"]["localization_false_region_pairs"] == 0
     assert result["results"][0]["sample_id"] == "paired"
     assert output.is_file()

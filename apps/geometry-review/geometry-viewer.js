@@ -3,7 +3,9 @@ import { OrbitControls } from "./vendor/three/addons/controls/OrbitControls.js";
 import { STLLoader } from "./vendor/three/addons/loaders/STLLoader.js";
 
 const VIEW_DIRECTION = new THREE.Vector3(1, -1.25, 0.85).normalize();
-const COLORS = { truth: 0x4397b8, candidate: 0xdf843d };
+const COLORS = {
+  truth: 0x4397b8, candidate: 0xdf843d, missing: 0xef4fa6, excess: 0xffd23f,
+};
 let sharedRenderer = null;
 
 function getSharedRenderer() {
@@ -59,6 +61,34 @@ class GeometryViewport {
     this.scene.add(edges);
   }
 
+  addLocalization(points, color, pointSize) {
+    if (!points?.length) return;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(
+      points.flatMap((item) => item.point), 3,
+    ));
+    const material = new THREE.PointsMaterial({
+      color, size: pointSize, sizeAttenuation: true, transparent: true, opacity: 0.95,
+      depthTest: false,
+    });
+    const cloud = new THREE.Points(geometry, material);
+    cloud.renderOrder = 20;
+    this.scene.add(cloud);
+  }
+
+  addRegionBox(region, color) {
+    const box = new THREE.Box3(
+      new THREE.Vector3(...region.bbox.min),
+      new THREE.Vector3(...region.bbox.max),
+    );
+    const helper = new THREE.Box3Helper(box, color);
+    helper.material.transparent = true;
+    helper.material.opacity = 0.82;
+    helper.material.depthTest = false;
+    helper.renderOrder = 21;
+    this.scene.add(helper);
+  }
+
   showInteractive() {
     this.container.dataset.viewerState = "ready";
     this.canvas.hidden = false;
@@ -75,6 +105,11 @@ class GeometryViewport {
   }
 
   resize() {
+    this.updateProjectionBounds();
+    this.render();
+  }
+
+  updateProjectionBounds() {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     const halfHeight = this.manager.frustumHeight / 2;
@@ -84,7 +119,6 @@ class GeometryViewport {
     this.camera.top = halfHeight;
     this.camera.bottom = -halfHeight;
     this.camera.updateProjectionMatrix();
-    this.render();
   }
 
   render() {
@@ -106,8 +140,11 @@ class SynchronizedGeometryViewers {
   constructor(containers, geometry) {
     this.geometryPaths = geometry;
     this.frustumHeight = 1;
+    this.globalFrustumHeight = 1;
     this.center = new THREE.Vector3();
     this.distance = 10;
+    this.regions = new Map();
+    this.pendingRegionId = null;
     this.syncing = false;
     this.disposed = false;
     this.renderer = getSharedRenderer();
@@ -151,12 +188,26 @@ class SynchronizedGeometryViewers {
     }
   }
 
+  async loadLocalization(path) {
+    if (!path) return null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(path, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`Localization request failed: ${response.status}`);
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async load() {
     Object.values(this.viewports).forEach((viewport) => viewport.showFallback("Loading geometry"));
     try {
-      const [truth, candidate] = await Promise.all([
+      const [truth, candidate, localization] = await Promise.all([
         this.loadGeometry(this.geometryPaths.ground_truth),
         this.loadGeometry(this.geometryPaths.candidate),
+        this.loadLocalization(this.geometryPaths.localization),
       ]);
       if (this.disposed) {
         truth?.dispose();
@@ -171,6 +222,7 @@ class SynchronizedGeometryViewers {
       const size = bounds.getSize(new THREE.Vector3());
       const span = Math.max(size.x, size.y, size.z, 1e-6);
       this.frustumHeight = span * 1.45;
+      this.globalFrustumHeight = this.frustumHeight;
       this.distance = span * 4;
       if (truth) {
         this.viewports.truth.addGeometry(truth, COLORS.truth);
@@ -189,9 +241,25 @@ class SynchronizedGeometryViewers {
         this.viewports.candidate.showFallback("Candidate geometry unavailable");
         if (!truth) this.viewports.overlay.showFallback("Overlay geometry unavailable");
       }
+      const visualization = localization?.visualization || {};
+      const missing = visualization.ground_truth_to_candidate || [];
+      const excess = visualization.candidate_to_ground_truth || [];
+      const pointSize = span * 0.014;
+      this.viewports.truth.addLocalization(missing, COLORS.missing, pointSize);
+      this.viewports.candidate.addLocalization(excess, COLORS.excess, pointSize);
+      this.viewports.overlay.addLocalization(missing, COLORS.missing, pointSize);
+      this.viewports.overlay.addLocalization(excess, COLORS.excess, pointSize);
+      for (const region of localization?.regions || []) {
+        this.regions.set(region.region_id, region);
+        const isMissing = region.direction === "ground_truth_to_candidate";
+        const color = isMissing ? COLORS.missing : COLORS.excess;
+        (isMissing ? this.viewports.truth : this.viewports.candidate).addRegionBox(region, color);
+        this.viewports.overlay.addRegionBox(region, color);
+      }
       truth?.dispose();
       candidate?.dispose();
       this.reset();
+      if (this.pendingRegionId) this.focusRegion(this.pendingRegionId);
     } catch (error) {
       if (this.disposed) return;
       Object.values(this.viewports).forEach((viewport) => viewport.showFallback(error.message));
@@ -199,8 +267,10 @@ class SynchronizedGeometryViewers {
   }
 
   reset() {
+    this.pendingRegionId = null;
     const source = Object.values(this.viewports).find((viewport) => !viewport.canvas.hidden);
     if (!source) return;
+    this.frustumHeight = this.globalFrustumHeight;
     source.camera.position.copy(this.center).addScaledVector(VIEW_DIRECTION, this.distance);
     source.camera.up.set(0, 0, 1);
     source.camera.zoom = 1;
@@ -210,6 +280,33 @@ class SynchronizedGeometryViewers {
     source.camera.updateProjectionMatrix();
     source.controls.update();
     this.syncFrom(source);
+  }
+
+  focusRegion(regionId) {
+    this.pendingRegionId = regionId;
+    const region = this.regions.get(regionId);
+    const source = Object.values(this.viewports).find((viewport) => !viewport.canvas.hidden);
+    if (!region || !source) return false;
+    const center = new THREE.Vector3(...region.centroid);
+    const lower = new THREE.Vector3(...region.bbox.min);
+    const upper = new THREE.Vector3(...region.bbox.max);
+    const regionSpan = Math.max(...upper.clone().sub(lower).toArray(), this.globalFrustumHeight * 0.04);
+    const viewDirection = source.camera.position.clone().sub(source.controls.target).normalize();
+    this.frustumHeight = Math.min(
+      this.globalFrustumHeight,
+      Math.max(regionSpan * 2.8, this.globalFrustumHeight * 0.12),
+    );
+    source.controls.target.copy(center);
+    source.camera.position.copy(center).addScaledVector(viewDirection, this.distance);
+    source.camera.zoom = 1;
+    source.camera.updateProjectionMatrix();
+    source.controls.update();
+    this.syncFrom(source);
+    Object.values(this.viewports).forEach((viewport) => {
+      viewport.updateProjectionBounds();
+      viewport.render();
+    });
+    return true;
   }
 
   syncFrom(source) {

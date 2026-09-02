@@ -4,7 +4,7 @@ Work only from task.json, input_files, the previous best drawing at $previous_ca
 
 Read and follow the AutoCAD skill at $skill_path.
 
-First call autocad_set_run_context with sample_id=$sample_id, run_id=$run_id, and attempt_id=$attempt_id. Read the full verifier result. The global metrics describe overlap, surface distance, extents, volume, and watertightness; mismatch positions are normalized within the ground-truth bounding box. Treat them as measurement feedback, not permission to weaken the verifier.
+First call autocad_set_run_context with sample_id=$sample_id, run_id=$run_id, and attempt_id=$attempt_id. Read the full verifier result. The global metrics describe overlap, surface distance, extents, volume, and watertightness. `mismatch.localization.regions` identifies connected high-error surface patches in the aligned ground-truth coordinate frame: `candidate_to_ground_truth` means candidate-excess-or-displaced evidence, while `ground_truth_to_candidate` means candidate-missing-or-displaced evidence. Use each region's centroid, bounding box, normalized position, distance, normal, and paired counterpart to connect numerical failure to a visible feature in the input drawing. These sampled regions localize discrepancies but do not prove a CAD feature type or reveal the responsible operation. Treat them as measurement feedback, not permission to weaken the verifier.
 
 AutoCAD Core Console does not provide the desktop application ActiveX object. Do not call `vlax-get-acad-object`, `vla-get-ActiveDocument`, or desktop document APIs. Use entity functions, selection sets, direct commands, and DXF data instead.
 

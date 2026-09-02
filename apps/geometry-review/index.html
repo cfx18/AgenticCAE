@@ -59,6 +59,10 @@
           <figure><figcaption>Candidate <span id="candidateCaption"></span></figcaption><div class="geometry-viewer" id="candidateViewer"><canvas aria-label="Interactive candidate geometry"></canvas><img id="candidateImage" class="geometry-fallback" alt="Candidate geometry render"><div class="viewer-status" role="status"></div><button class="reset-view" type="button" title="Reset synchronized view" aria-label="Reset synchronized view">Reset</button></div><div class="image-caption" id="candidateState"></div></figure>
           <figure><figcaption>Aligned overlay <span>blue truth / orange candidate</span></figcaption><div class="geometry-viewer" id="overlayViewer"><canvas aria-label="Interactive aligned geometry overlay"></canvas><img id="overlayImage" class="geometry-fallback" alt="Aligned candidate and ground truth overlay"><div class="viewer-status" role="status"></div><button class="reset-view" type="button" title="Reset synchronized view" aria-label="Reset synchronized view">Reset</button></div><div class="image-caption" id="overlayState"></div></figure>
         </div>
+        <section class="localization-panel">
+          <header><div><h2>Localized surface mismatch</h2><p>Click a region to focus all three views.</p></div><div class="localization-legend"><span class="missing-swatch"></span>Missing or displaced<span class="excess-swatch"></span>Excess or displaced</div></header>
+          <div class="localization-regions" id="localizationRegions"></div>
+        </section>
       </section>
 
       <section class="tab-panel" id="verifierPanel">
@@ -128,6 +132,6 @@
   </main>
 
   <dialog id="imageDialog"><button id="closeDialog" aria-label="Close image">Close</button><img id="dialogImage" alt="Expanded review evidence"></dialog>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

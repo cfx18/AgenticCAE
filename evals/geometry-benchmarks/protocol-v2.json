@@ -13,6 +13,16 @@
     "seed": 20260830,
     "points": 20000
   },
+  "localization": {
+    "protocol": "evocad-surface-localization-v1",
+    "method": "bidirectional deterministic point-to-triangle surface distance plus connected spatial cells",
+    "seed": 20260902,
+    "distance_threshold_normalized": 0.006,
+    "cluster_radius_normalized": 0.025,
+    "coordinate_frame": "aligned-ground-truth-world",
+    "max_regions_per_direction": 12,
+    "interpretation": "Diagnostic regions identify candidate-excess-or-displaced and candidate-missing-or-displaced surface patches. They do not assert CAD feature semantics or operation provenance."
+  },
   "voxel_resolution": 64,
   "strict_thresholds": {
     "candidate_watertight": true,

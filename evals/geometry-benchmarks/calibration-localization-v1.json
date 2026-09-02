@@ -1,0 +1,311 @@
+{
+  "schema_version": "1.0",
+  "kind": "ground-truth-cross-format-calibration",
+  "protocol": "evocad-geometry-v2",
+  "manifest": ".local/datasets/evocad/materialized/geometry-pilot-v1/manifest.json",
+  "manifest_sha256": "28d191d3cd7193a5c2bd53f212d5095248ab7e9c89da95c05f68776859c061f4",
+  "parameters": {
+    "surface_samples": 20000,
+    "voxel_resolution": 48,
+    "thresholds": {
+      "voxel_iou_min": 0.99,
+      "normalized_chamfer_max": 0.006,
+      "bbox_relative_error_max": 0.002,
+      "volume_relative_error_max": 0.005,
+      "candidate_watertight": true
+    }
+  },
+  "summary": {
+    "pairs": 10,
+    "passed": 10,
+    "failed": 0,
+    "mean_voxel_iou": 0.99941,
+    "mean_normalized_chamfer": 0.004413,
+    "mean_volume_relative_error": 0.000479,
+    "localization_false_region_pairs": 0,
+    "maximum_localization_p95_normalized": 0.000574,
+    "maximum_localization_distance_normalized": 0.005714
+  },
+  "results": [
+    {
+      "sample_id": "omnimech:1",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.117405,
+        "normalized_chamfer": 0.004625,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.00038,
+        "surface_area_relative_error": 8e-06
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.000409,
+        "candidate_to_ground_truth_max_normalized": 0.005436,
+        "ground_truth_to_candidate_p95_normalized": 0.000413,
+        "ground_truth_to_candidate_max_normalized": 0.005714
+      }
+    },
+    {
+      "sample_id": "omnimech:2",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.36535,
+        "normalized_chamfer": 0.004555,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000201,
+        "surface_area_relative_error": 2.4e-05
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 5.2e-05,
+        "candidate_to_ground_truth_max_normalized": 0.000123,
+        "ground_truth_to_candidate_p95_normalized": 5.2e-05,
+        "ground_truth_to_candidate_max_normalized": 0.000123
+      }
+    },
+    {
+      "sample_id": "omnimech:3",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.290789,
+        "normalized_chamfer": 0.005105,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000408,
+        "surface_area_relative_error": 0.000121
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.000191,
+        "candidate_to_ground_truth_max_normalized": 0.000316,
+        "ground_truth_to_candidate_p95_normalized": 0.000187,
+        "ground_truth_to_candidate_max_normalized": 0.000316
+      }
+    },
+    {
+      "sample_id": "omnimech:4",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.524132,
+        "normalized_chamfer": 0.003559,
+        "bbox_relative_error": 4e-06,
+        "volume_relative_error": 0.000696,
+        "surface_area_relative_error": 0.000296
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.000221,
+        "candidate_to_ground_truth_max_normalized": 0.000459,
+        "ground_truth_to_candidate_p95_normalized": 0.000225,
+        "ground_truth_to_candidate_max_normalized": 0.000469
+      }
+    },
+    {
+      "sample_id": "omnimech:5",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.192789,
+        "normalized_chamfer": 0.00481,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000125,
+        "surface_area_relative_error": 6.9e-05
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 7.8e-05,
+        "candidate_to_ground_truth_max_normalized": 0.000134,
+        "ground_truth_to_candidate_p95_normalized": 8e-05,
+        "ground_truth_to_candidate_max_normalized": 0.000134
+      }
+    },
+    {
+      "sample_id": "omnimech:6",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 0.996149,
+        "chamfer_distance": 0.426686,
+        "normalized_chamfer": 0.004312,
+        "bbox_relative_error": 0.000251,
+        "volume_relative_error": 0.000946,
+        "surface_area_relative_error": 0.000969
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.000567,
+        "candidate_to_ground_truth_max_normalized": 0.000704,
+        "ground_truth_to_candidate_p95_normalized": 0.000574,
+        "ground_truth_to_candidate_max_normalized": 0.000706
+      }
+    },
+    {
+      "sample_id": "omnimech:7",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.167496,
+        "normalized_chamfer": 0.004733,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000134,
+        "surface_area_relative_error": 7.7e-05
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 9.7e-05,
+        "candidate_to_ground_truth_max_normalized": 0.000214,
+        "ground_truth_to_candidate_p95_normalized": 8.5e-05,
+        "ground_truth_to_candidate_max_normalized": 0.000213
+      }
+    },
+    {
+      "sample_id": "omnimech:8",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 0.997953,
+        "chamfer_distance": 0.321204,
+        "normalized_chamfer": 0.004489,
+        "bbox_relative_error": 2.8e-05,
+        "volume_relative_error": 0.001549,
+        "surface_area_relative_error": 0.000214
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.000295,
+        "candidate_to_ground_truth_max_normalized": 0.000489,
+        "ground_truth_to_candidate_p95_normalized": 0.0003,
+        "ground_truth_to_candidate_max_normalized": 0.000488
+      }
+    },
+    {
+      "sample_id": "omnimech:9",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.167264,
+        "normalized_chamfer": 0.003785,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000296,
+        "surface_area_relative_error": 0.000171
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 5.7e-05,
+        "candidate_to_ground_truth_max_normalized": 0.000171,
+        "ground_truth_to_candidate_p95_normalized": 5.6e-05,
+        "ground_truth_to_candidate_max_normalized": 0.000171
+      }
+    },
+    {
+      "sample_id": "omnimech:10",
+      "dataset": "omnimech",
+      "passed": true,
+      "checks": {
+        "candidate_watertight": true,
+        "voxel_iou": true,
+        "normalized_chamfer": true,
+        "bbox_relative_error": true,
+        "volume_relative_error": true
+      },
+      "metrics": {
+        "voxel_iou": 1.0,
+        "chamfer_distance": 0.446757,
+        "normalized_chamfer": 0.004162,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 5e-05,
+        "surface_area_relative_error": 3e-05
+      },
+      "localization": {
+        "region_count": 0,
+        "localized_sample_fraction": 0.0,
+        "candidate_to_ground_truth_p95_normalized": 0.0,
+        "candidate_to_ground_truth_max_normalized": 7e-05,
+        "ground_truth_to_candidate_p95_normalized": 0.0,
+        "ground_truth_to_candidate_max_normalized": 7e-05
+      }
+    }
+  ]
+}

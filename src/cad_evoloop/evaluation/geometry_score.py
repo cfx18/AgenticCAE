@@ -9,6 +9,8 @@ from pathlib import Path
 import statistics
 from typing import Any
 
+from .geometry_localization import localize_surface_mismatch
+
 
 PROTOCOL_ID = "evocad-geometry-v2"
 DEFAULT_THRESHOLDS = {
@@ -30,6 +32,7 @@ ACCEPTABLE_THRESHOLDS = {
 def _dependencies():
     try:
         from OCP.BRep import BRep_Tool
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
         from OCP.BRepMesh import BRepMesh_IncrementalMesh
         from OCP.IFSelect import IFSelect_RetDone
         from OCP.STEPControl import STEPControl_Reader
@@ -47,6 +50,7 @@ def _dependencies():
         ) from exc
     ocp = {
         "BRep_Tool": BRep_Tool,
+        "BRepAdaptor_Surface": BRepAdaptor_Surface,
         "BRepMesh_IncrementalMesh": BRepMesh_IncrementalMesh,
         "IFSelect_RetDone": IFSelect_RetDone,
         "STEPControl_Reader": STEPControl_Reader,
@@ -73,9 +77,36 @@ def _load_step_mesh(path: Path, *, tessellation: float, ocp, np, trimesh):
 
     vertices = []
     triangles = []
+    triangle_face_indices = []
+    face_surfaces = []
     explorer = ocp["TopExp_Explorer"](shape, ocp["TopAbs_FACE"])
     while explorer.More():
         face = ocp["TopoDS"].Face_s(explorer.Current())
+        adaptor = ocp["BRepAdaptor_Surface"](face)
+        surface_code = int(adaptor.GetType())
+        surface_names = {
+            0: "plane", 1: "cylinder", 2: "cone", 3: "sphere", 4: "torus",
+            5: "bezier", 6: "bspline", 7: "revolution", 8: "extrusion", 9: "offset",
+            10: "other",
+        }
+        surface = {"surface_type": surface_names.get(surface_code, "other")}
+        try:
+            if surface_code == 1:
+                surface["radius"] = round(float(adaptor.Cylinder().Radius()), 6)
+            elif surface_code == 2:
+                cone = adaptor.Cone()
+                surface["reference_radius"] = round(float(cone.RefRadius()), 6)
+                surface["semi_angle"] = round(float(cone.SemiAngle()), 6)
+            elif surface_code == 3:
+                surface["radius"] = round(float(adaptor.Sphere().Radius()), 6)
+            elif surface_code == 4:
+                torus = adaptor.Torus()
+                surface["major_radius"] = round(float(torus.MajorRadius()), 6)
+                surface["minor_radius"] = round(float(torus.MinorRadius()), 6)
+        except (AttributeError, RuntimeError):
+            pass
+        face_index = len(face_surfaces)
+        face_surfaces.append(surface)
         location = ocp["TopLoc_Location"]()
         triangulation = ocp["BRep_Tool"].Triangulation_s(face, location)
         if triangulation is not None:
@@ -91,12 +122,52 @@ def _load_step_mesh(path: Path, *, tessellation: float, ocp, np, trimesh):
                 if reversed_face:
                     triangle[1], triangle[2] = triangle[2], triangle[1]
                 triangles.append([offset + node - 1 for node in triangle])
+                triangle_face_indices.append(face_index)
         explorer.Next()
     if not triangles:
         raise ValueError(f"STEP geometry contains no triangulated faces: {path}")
+    vertex_array = np.asarray(vertices)
+    triangle_array = np.asarray(triangles)
+    face_index_array = np.asarray(triangle_face_indices, dtype=np.int64)
+    descriptors = {}
+    face_ids = np.empty(len(triangle_array), dtype="<U24")
+    used_ids: dict[str, int] = {}
+    for face_index, surface in enumerate(face_surfaces):
+        selected = np.flatnonzero(face_index_array == face_index)
+        if not len(selected):
+            continue
+        face_triangles = vertex_array[triangle_array[selected]]
+        cross = np.cross(
+            face_triangles[:, 1] - face_triangles[:, 0],
+            face_triangles[:, 2] - face_triangles[:, 0],
+        )
+        areas = np.linalg.norm(cross, axis=1) / 2.0
+        total_area = float(areas.sum())
+        centroids = face_triangles.mean(axis=1)
+        centroid = (
+            (centroids * areas[:, None]).sum(axis=0) / total_area
+            if total_area > 0 else centroids.mean(axis=0)
+        )
+        descriptor = {
+            **surface,
+            "area": round(total_area, 6),
+            "centroid": [round(float(value), 6) for value in centroid],
+            "bbox_min": [round(float(value), 6) for value in face_triangles.min(axis=(0, 1))],
+            "bbox_max": [round(float(value), 6) for value in face_triangles.max(axis=(0, 1))],
+        }
+        canonical = json.dumps(descriptor, sort_keys=True, separators=(",", ":"))
+        base_id = "face-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+        collision = used_ids.get(base_id, 0)
+        used_ids[base_id] = collision + 1
+        face_id = base_id if collision == 0 else f"{base_id}-{collision + 1}"
+        descriptor["face_id"] = face_id
+        descriptors[face_id] = descriptor
+        face_ids[selected] = face_id
     return trimesh.Trimesh(
-        vertices=np.asarray(vertices),
-        faces=np.asarray(triangles),
+        vertices=vertex_array,
+        faces=triangle_array,
+        face_attributes={"brep_face_id": face_ids},
+        metadata={"brep_face_descriptors": descriptors, "source_format": "step"},
         process=True,
     )
 
@@ -159,29 +230,17 @@ def _chamfer(candidate, target, cKDTree, np) -> float:
 
 
 def _distance_diagnostics(candidate, ground_truth, sample_count: int, cKDTree, np):
-    candidate_points = _surface_samples(candidate, sample_count, np)
-    target_points = _surface_samples(ground_truth, sample_count, np)
-    candidate_distances = cKDTree(target_points).query(candidate_points, workers=-1)[0]
-    target_distances = cKDTree(candidate_points).query(target_points, workers=-1)[0]
-    diagonal = float(np.linalg.norm(ground_truth.extents))
-    lower = ground_truth.bounds[0]
-    extents = np.maximum(ground_truth.extents, diagonal * 1e-9)
-
-    def summarize(distances, points):
-        worst = int(np.argmax(distances))
-        return {
-            "p50_normalized": round(float(np.quantile(distances, 0.5) / diagonal), 6),
-            "p95_normalized": round(float(np.quantile(distances, 0.95) / diagonal), 6),
-            "max_normalized": round(float(distances[worst] / diagonal), 6),
-            "worst_point_bbox_position": (
-                (points[worst] - lower) / extents
-            ).round(4).tolist(),
-        }
-
-    return {
-        "candidate_to_ground_truth": summarize(candidate_distances, candidate_points),
-        "ground_truth_to_candidate": summarize(target_distances, target_points),
-    }
+    _, _, _, trimesh = _dependencies()
+    localization = localize_surface_mismatch(
+        candidate,
+        ground_truth,
+        sample_count=sample_count,
+        cKDTree=cKDTree,
+        np=np,
+        trimesh=trimesh,
+    )
+    summaries = localization.pop("distance_summary")
+    return {**summaries, "localization": localization}
 
 
 def _threshold_score(value: float, threshold: float) -> float:
@@ -356,14 +415,33 @@ def calibrate_geometry_manifest(
             sample_count=sample_count,
             voxel_resolution=voxel_resolution,
         )
+        mismatch = result.get("mismatch") or {}
+        localization = mismatch.get("localization") or {}
         rows.append({
             "sample_id": sample["sample_id"],
             "dataset": sample["dataset"],
             "passed": result["passed"],
             "checks": result["checks"],
             "metrics": result["metrics"],
+            "localization": {
+                "region_count": localization.get("region_count"),
+                "localized_sample_fraction": localization.get("localized_sample_fraction"),
+                "candidate_to_ground_truth_p95_normalized": (
+                    (mismatch.get("candidate_to_ground_truth") or {}).get("p95_normalized")
+                ),
+                "candidate_to_ground_truth_max_normalized": (
+                    (mismatch.get("candidate_to_ground_truth") or {}).get("max_normalized")
+                ),
+                "ground_truth_to_candidate_p95_normalized": (
+                    (mismatch.get("ground_truth_to_candidate") or {}).get("p95_normalized")
+                ),
+                "ground_truth_to_candidate_max_normalized": (
+                    (mismatch.get("ground_truth_to_candidate") or {}).get("max_normalized")
+                ),
+            } if mismatch else None,
         })
     metrics = [row["metrics"] for row in rows]
+    localization_rows = [row["localization"] for row in rows if row["localization"]]
     summary = {
         "pairs": len(rows),
         "passed": sum(row["passed"] for row in rows),
@@ -377,12 +455,32 @@ def calibrate_geometry_manifest(
         "mean_volume_relative_error": round(statistics.mean(
             item["volume_relative_error"] for item in metrics
         ), 6) if metrics else None,
+        "localization_false_region_pairs": sum(
+            int(item["region_count"] or 0) > 0 for item in localization_rows
+        ),
+        "maximum_localization_p95_normalized": round(max((
+            max(
+                float(item["candidate_to_ground_truth_p95_normalized"] or 0),
+                float(item["ground_truth_to_candidate_p95_normalized"] or 0),
+            )
+            for item in localization_rows
+        ), default=0.0), 6),
+        "maximum_localization_distance_normalized": round(max((
+            max(
+                float(item["candidate_to_ground_truth_max_normalized"] or 0),
+                float(item["ground_truth_to_candidate_max_normalized"] or 0),
+            )
+            for item in localization_rows
+        ), default=0.0), 6),
     }
     payload = {
         "schema_version": "1.0",
         "kind": "ground-truth-cross-format-calibration",
         "protocol": PROTOCOL_ID,
-        "manifest": str(manifest_path),
+        "manifest": (
+            manifest_path.relative_to(Path.cwd().resolve()).as_posix()
+            if manifest_path.is_relative_to(Path.cwd().resolve()) else str(manifest_path)
+        ),
         "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "parameters": {
             "surface_samples": sample_count,

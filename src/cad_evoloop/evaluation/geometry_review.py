@@ -398,10 +398,16 @@ def generate_geometry_review_bundle(
             candidate_render = assets / asset_root / f"{attempt_id}-candidate.png"
             overlay_render = assets / asset_root / f"{attempt_id}-overlay.png"
             candidate_geometry = assets / asset_root / f"{attempt_id}-candidate.stl"
+            localization_asset = assets / asset_root / f"{attempt_id}-localization.json"
             candidate_render.unlink(missing_ok=True)
             overlay_render.unlink(missing_ok=True)
             candidate_geometry.unlink(missing_ok=True)
+            localization_asset.unlink(missing_ok=True)
             render_error = ground_truth_error
+            localization_error = None
+            localization_summary = None
+            localization_cache = None
+            candidate_mesh = None
             if render_geometry and candidate_path.is_file() and ground_truth_mesh is not None:
                 try:
                     from .geometry_score import _load_mesh
@@ -415,6 +421,97 @@ def generate_geometry_review_bundle(
                     )
                 except Exception as exc:
                     render_error = repr(exc)
+            if candidate_mesh is not None and ground_truth_mesh is not None:
+                try:
+                    from .geometry_localization import localize_surface_mismatch
+                    from .geometry_score import _dependencies
+
+                    _, np, cKDTree, trimesh = _dependencies()
+                    reference_localization = (
+                        (verdict.get("mismatch") or {}).get("localization") or {}
+                    )
+                    configured_samples = int(reference_localization.get(
+                        "surface_samples_per_direction", 4000,
+                    ))
+                    visualization_samples = max(1000, min(configured_samples, 4000))
+                    cache_binding = {
+                        "protocol": "evocad-surface-localization-v1",
+                        "implementation_sha256": sha256_file(
+                            Path(__file__).with_name("geometry_localization.py")
+                        ),
+                        "candidate_sha256": sha256_file(candidate_path),
+                        "ground_truth_sha256": sha256_file(ground_truth),
+                        "alignment": verdict.get("alignment"),
+                        "surface_samples_per_direction": visualization_samples,
+                        "max_visualization_points": 1600,
+                    }
+                    cache_key = _canonical_sha256(cache_binding)
+                    cache_path = (
+                        workspace / ".local/cache/geometry-localization"
+                        / f"{cache_key}.json"
+                    )
+                    cache_hit = cache_path.is_file()
+                    visual_localization = _read_json(cache_path) if cache_hit else None
+                    if not isinstance(visual_localization, dict):
+                        visual_localization = localize_surface_mismatch(
+                            candidate_mesh,
+                            ground_truth_mesh,
+                            sample_count=visualization_samples,
+                            cKDTree=cKDTree,
+                            np=np,
+                            trimesh=trimesh,
+                            include_visualization=True,
+                            max_visualization_points=1600,
+                        )
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_text(
+                            json.dumps(visual_localization, separators=(",", ":")) + "\n",
+                            encoding="utf-8",
+                        )
+                    localization_cache = {"key": cache_key, "hit": cache_hit}
+                    if reference_localization:
+                        localization = {
+                            **reference_localization,
+                            "visualization": visual_localization.get("visualization", {}),
+                            "visualization_surface_samples_per_direction": visualization_samples,
+                            "region_summary_source": "geometry-verdict.json",
+                        }
+                        reference_by_direction = {
+                            direction: [
+                                region for region in reference_localization.get("regions", [])
+                                if region.get("direction") == direction
+                            ]
+                            for direction in (
+                                "candidate_to_ground_truth", "ground_truth_to_candidate",
+                            )
+                        }
+                        for direction, points in localization["visualization"].items():
+                            reference_regions = reference_by_direction.get(direction, [])
+                            if not reference_regions:
+                                continue
+                            centers = np.asarray([
+                                region["centroid"] for region in reference_regions
+                            ], dtype=float)
+                            for point in points:
+                                distances = np.linalg.norm(
+                                    centers - np.asarray(point["point"], dtype=float), axis=1,
+                                )
+                                point["region_id"] = reference_regions[
+                                    int(np.argmin(distances))
+                                ]["region_id"]
+                    else:
+                        localization = visual_localization
+                    localization_asset.write_text(
+                        json.dumps(localization, separators=(",", ":")) + "\n",
+                        encoding="utf-8",
+                    )
+                    localization_summary = {
+                        key: value
+                        for key, value in localization.items()
+                        if key != "visualization"
+                    }
+                except Exception as exc:
+                    localization_error = repr(exc)
             evidence = {
                 "candidate": _file_evidence(candidate_path),
                 "verdict": _file_evidence(verdict_path),
@@ -432,6 +529,7 @@ def generate_geometry_review_bundle(
                 "geometry_assets": {
                     "candidate": _file_evidence(candidate_geometry),
                     "ground_truth": _file_evidence(truth_geometry),
+                    "localization": _file_evidence(localization_asset),
                 },
             }
             attempts.append({
@@ -469,8 +567,13 @@ def generate_geometry_review_bundle(
                     if candidate_geometry.is_file() else None,
                     "ground_truth": "assets/" + truth_geometry.relative_to(assets).as_posix()
                     if truth_geometry.is_file() else None,
+                    "localization": "assets/" + localization_asset.relative_to(assets).as_posix()
+                    if localization_asset.is_file() else None,
                 },
                 "render_error": render_error,
+                "localization_error": localization_error,
+                "localization": localization_summary,
+                "localization_cache": localization_cache,
                 "parse_errors": parse_errors,
             })
         selected_attempt = next(

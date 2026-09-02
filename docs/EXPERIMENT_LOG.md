@@ -1,5 +1,30 @@
 # EvoCAD Experiment Log
 
+## 2026-09-02: Surface-level feature localization foundation
+
+The geometry verifier now emits deterministic bidirectional point-to-triangle
+surface mismatch
+regions under `evocad-surface-localization-v1`. Each region records its aligned
+world-space centroid and bounds, normalized bounding-box position, area proxy,
+distance severity, normal disagreement, and possible opposite-direction
+counterparts. The result distinguishes missing-or-displaced from
+excess-or-displaced evidence without claiming an unsupported CAD feature type.
+
+Review exports materialize a separate hash-bound localization asset containing
+bounded point samples. The synchronized Three.js views render the samples and
+region boxes, and a reviewer can focus all views on any reported region.
+Ground-truth STEP triangles retain stable B-Rep face fingerprints and analytic
+surface types, so missing regions can cite the contributing plane, cylinder,
+cone, sphere, or torus faces. Candidate-side native face identity, semantic
+feature recognition, and CAD-operation provenance remain explicit later phases
+rather than being inferred from triangle proximity.
+
+The localization distance threshold is 0.006 of the ground-truth bounding-box
+diagonal. An initial 0.003 threshold produced five tiny regions on one of ten
+equivalent STEP/STL calibration pairs because of curved-surface tessellation;
+the calibrated threshold sits above the observed 0.005714 maximum while still
+exposing missing and excess engineering-scale geometry.
+
 ## 2026-09-02: Long-Horizon Engineering Foundation
 
 Objective:

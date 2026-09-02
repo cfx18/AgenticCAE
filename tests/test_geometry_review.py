@@ -235,8 +235,9 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=8"' in html
+    assert 'src="app.js?v=9"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
+    assert 'id="localizationRegions"' in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
     three_module = (root / "vendor/three/three.module.min.js").read_text(encoding="utf-8")
     assert "OrbitControls" in viewer
@@ -250,11 +251,15 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     assert (root / "vendor/three/three.core.min.js").stat().st_size > 300_000
     assert 'type="importmap"' not in html
     assert 'max-height: 100%' in styles
-    assert 'height: clamp(260px, 38vh, 440px)' in styles
+    assert 'height: clamp(180px, 26vh, 300px)' in styles
+    assert 'height: clamp(180px, 32vh, 280px)' in styles
     assert 'aspect-ratio: 1' in styles
     assert 'cursor: grab' in styles
     assert 'pointer-events: auto' in styles
-    assert 'import("./geometry-viewer.js?v=7")' in script
+    assert 'import("./geometry-viewer.js?v=8")' in script
+    assert "focusRegion" in viewer
+    assert "addLocalization" in viewer
+    assert "state.selectedRegion" in script
     assert "Decision transport" in script
     assert 'viewport.render()' in viewer
     assert 'viewport.resize()' not in viewer
@@ -320,8 +325,23 @@ def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatc
     assert attempt["geometry"]["candidate"].endswith("a001-candidate.stl")
     assert attempt["geometry"]["ground_truth"].endswith("ground-truth.stl")
     assert attempt["evidence"]["geometry_assets"]["candidate"]["sha256"]
+    assert attempt["geometry"]["localization"].endswith("a001-localization.json")
+    assert attempt["evidence"]["geometry_assets"]["localization"]["sha256"]
+    assert attempt["localization"]["protocol"] == "evocad-surface-localization-v1"
+    assert attempt["localization_cache"]["hit"] is False
+    localization = json.loads(
+        (output / attempt["geometry"]["localization"]).read_text(encoding="utf-8")
+    )
+    assert localization["protocol"] == "evocad-surface-localization-v1"
+    assert "visualization" in localization
     store = HumanReviewStore(output / "review-data.json", workspace / "reviews.jsonl")
     assert store.verify_bundle()["ok"] is True
+
+    cached = generate_geometry_review_bundle(
+        campaign, workspace / "reports/review-cached", source_manifest=source,
+        render_geometry=True,
+    )
+    assert cached["runs"][0]["attempts"][0]["localization_cache"]["hit"] is True
 
 
 def test_candidate_alignment_uses_truth_center_without_rotation() -> None:

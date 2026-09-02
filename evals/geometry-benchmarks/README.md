@@ -39,6 +39,11 @@ cad-evoloop geometry-calibrate .local/datasets/evocad/materialized/geometry-pilo
   --output .local/datasets/evocad/geometry-runs/calibration.json
 ```
 
+The publishable localization calibration summary is frozen at
+`calibration-localization-v1.json`; all ten equivalent STEP/STL pairs produce
+zero localized regions at the calibrated threshold, with maximum observed
+point-to-surface distance 0.005714.
+
 The 50-sample strict split uses only sources with STEP ground truth:
 
 ```powershell
@@ -58,6 +63,16 @@ bounding-box relative error at most 0.002, and volume relative error at most
 0.005. The older v1 thresholds are retained as the `acceptable` tier rather
 than being reported as strict completion. Surface sampling defaults to 20,000
 deterministic points. Both tiers are calibrated against ten STEP/STL pairs.
+
+Every score also includes additive `evocad-surface-localization-v1`
+diagnostics. The verifier samples both surface directions, computes exact
+point-to-triangle distances with a centroid-radius spatial index, thresholds
+distances at 0.006 of the ground-truth bounding-box diagonal, and groups connected error
+samples into bounded regions. Region summaries are safe for the repair Agent;
+the review export separately materializes a hash-bound point heatmap so visual
+evidence does not inflate model context. Because these regions use evaluator
+ground truth, experiments must label verifier-guided repair separately from
+image-only Pass@1 and must not describe the regions as inferred CAD features.
 
 For native AutoCAD candidates, export and score without opening desktop
 AutoCAD:
