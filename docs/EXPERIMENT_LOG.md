@@ -289,6 +289,36 @@ campaign:
   against the declared operation without changing the unrestricted payload.
 
 These checks establish transport, extraction, alignment, graph construction,
-and persistence. They do not establish exact design-history recovery. Face
-mapping is currently spatial and confidence-labelled; exact point-to-face
-queries and calibrated feature-class precision remain follow-up experiments.
+exact point-to-face query, and persistence. They do not establish exact design-history
+recovery or calibrated feature-class precision.
+
+## 2026-09-03: Frozen 30-Run Native Feature Backfill
+
+The selected checkpoints from `agent-geometry-30-sol-v2` were re-scored and
+enriched in a separate, hash-bound derived campaign. No source result, verdict,
+candidate, or trajectory was modified.
+
+- 30/30 selected DWGs exported native B-Rep topology; zero export failures;
+- 10 checkpoints produced 69 localized mismatch regions;
+- all 69 regions received an exact candidate-face or nearest-boundary assignment;
+- 40/69 assignments met the current vote-based high-confidence rule;
+- all 36 candidate-to-ground-truth regions were within normalized face distance
+  `0.006` (33 at numerical zero);
+- all 33 ground-truth-to-candidate regions exceeded `0.006`; their median nearest
+  candidate-boundary distance was `0.006629`;
+- 23/69 regions intersected an inferred analytic feature candidate;
+- 0/69 linked to an Agent-declared operation because the historical v2 audit
+  predates operation manifests. This is a baseline limitation, not an exporter
+  failure.
+
+Assignment coverage is not reported as localization accuracy because this split
+does not contain expert face-attribution labels. Missing-region queries identify
+the nearest surviving candidate boundary, not the absent feature itself.
+
+Artifacts:
+
+- backfill: `reports/generated/agent-geometry-30-sol-v2-feature-backfill-v1/`;
+- analysis: `reports/generated/agent-geometry-30-sol-v2-feature-backfill-analysis/`;
+- backfill manifest: `01e6963a11057492d9534874ec16cce3ea75fa4a1e740e2b1409061dc7863351`;
+- analysis inputs bind the backfill summary SHA-256
+  `0a37a209a83c32cbdb19b7323f0319a3af7335649088eb91b5e9b9745a9dc9d3`.

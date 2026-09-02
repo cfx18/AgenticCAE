@@ -290,7 +290,7 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
         assert f'id="{identifier}"' in html
     assert 'fetch("/api/reviews"' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=9"' in html
+    assert 'src="app.js?v=10"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     assert 'id="localizationRegions"' in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")

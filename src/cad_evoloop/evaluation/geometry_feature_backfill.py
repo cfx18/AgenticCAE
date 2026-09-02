@@ -66,6 +66,16 @@ def _artifact(path: Path | None) -> dict[str, Any] | None:
     return {"path": str(path), "sha256": sha256_file(path), "bytes": path.stat().st_size}
 
 
+def _validate_cached_record(record: dict[str, Any]) -> None:
+    for group in ("source_artifacts", "artifacts"):
+        for item in (record.get(group) or {}).values():
+            if not item:
+                continue
+            path = Path(item["path"])
+            if not path.is_file() or sha256_file(path) != item.get("sha256"):
+                raise ValueError(f"Cached backfill artifact changed: {path}")
+
+
 def _record_summary(record: dict[str, Any]) -> dict[str, Any]:
     if record.get("status") != "completed":
         return {
@@ -202,8 +212,10 @@ def backfill_geometry_features(
         record_path = record_dir / "record.json"
         if record_path.is_file():
             record = json.loads(record_path.read_text(encoding="utf-8"))
-            records.append(record)
-            continue
+            if record.get("status") == "completed":
+                _validate_cached_record(record)
+                records.append(record)
+                continue
         record_dir.mkdir(parents=True, exist_ok=True)
         candidate_dwg = job_dir / "candidate.dwg"
         candidate_stl = job_dir / "candidate.stl"

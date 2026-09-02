@@ -4,7 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from cad_evoloop.evaluation import geometry_feature_backfill as backfill
+from cad_evoloop.evaluation import geometry_feature_report as feature_report
 
 
 def _write(path: Path, value: str) -> Path:
@@ -110,3 +113,14 @@ def test_backfill_is_resumable_and_does_not_modify_frozen_campaign(tmp_path, mon
     assert len(calls) == 1
     assert hashlib.sha256(results_path.read_bytes()).hexdigest() == frozen_hash
     assert json.loads((output / "backfill-manifest.json").read_text())["sample_ids"] == ["sample:1"]
+
+    monkeypatch.setattr(feature_report, "project_root", lambda: workspace)
+    report = feature_report.generate_feature_backfill_report(
+        output, workspace / "reports/backfill-analysis",
+    )
+    assert report["accuracy_status"] == "unmeasured_without_expert_face_labels"
+    assert report["directions"]["candidate_to_ground_truth"]["zero_distance_count"] == 1
+
+    (job / "candidate.dwg").write_text("changed", encoding="utf-8")
+    with pytest.raises(ValueError, match="Cached backfill artifact changed"):
+        backfill.backfill_geometry_features(campaign, source, output)

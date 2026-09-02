@@ -28,6 +28,36 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File mcp/autocad-topology/bui
 
 Set `AUTOCAD_CORE_CONSOLE`, `AUTOCAD_MANAGED_DIR`, and `AUTOCAD_TOPOLOGY_PLUGIN` to override installation-specific paths.
 
+## Frozen campaign backfill
+
+Frozen campaigns can be enriched without changing their trajectories or verdicts. The
+backfill binds the source campaign, selected candidates, evaluator implementation, and
+plugin source by SHA-256, then writes all derived evidence to a separate directory:
+
+```powershell
+cad-evoloop geometry-feature-backfill `
+  evals/geometry-benchmarks/batch/agent-geometry-30-sol-v2 `
+  --source-manifest .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  --output reports/generated/agent-geometry-30-sol-v2-feature-backfill-v1
+
+cad-evoloop geometry-feature-report `
+  reports/generated/agent-geometry-30-sol-v2-feature-backfill-v1 `
+  --output reports/generated/agent-geometry-30-sol-v2-feature-backfill-analysis
+
+cad-evoloop geometry-review-export `
+  evals/geometry-benchmarks/batch/agent-geometry-30-sol-v2 `
+  --source-manifest .local/datasets/evocad/materialized/geometry-50-v1/manifest.json `
+  --feature-backfill reports/generated/agent-geometry-30-sol-v2-feature-backfill-v1 `
+  --output reports/generated/agent-geometry-30-sol-v2-feature-backfill-review `
+  --render-geometry
+```
+
+Face assignment coverage is not localization accuracy. Candidate-to-truth queries
+originate on candidate surfaces and identify excess or displaced faces. Truth-to-candidate
+queries originate on missing truth surfaces, so their result is the nearest surviving
+candidate boundary and must be interpreted with its normalized distance. Expert face
+labels are required before reporting feature-localization accuracy.
+
 ## Current boundary
 
 This version recovers native B-Rep topology, analytic geometry, and point-to-trimmed-face attribution, not a complete parametric construction history. Query accuracy on pathological or invalid B-Reps and sub-feature causality across destructive Boolean operations remain calibration targets. Those limitations are surfaced in the verdict rather than hidden behind a high-confidence label.

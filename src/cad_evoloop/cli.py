@@ -21,6 +21,7 @@ from .evaluation.agent_geometry_campaign import run_agent_geometry_campaign
 from .evaluation.geometry_report import generate_geometry_campaign_report
 from .evaluation.geometry_review import generate_geometry_review_bundle
 from .evaluation.geometry_feature_backfill import backfill_geometry_features
+from .evaluation.geometry_feature_report import generate_feature_backfill_report
 from .evaluation.agent_geometry_report import generate_agent_geometry_report
 from .evaluation.geometry_split import write_geometry_split
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
@@ -256,6 +257,15 @@ def _backfill_geometry_features() -> None:
     print(json.dumps(result, ensure_ascii=False))
 
 
+def _report_geometry_features() -> None:
+    parser = argparse.ArgumentParser(description="Report native face backfill diagnostics")
+    parser.add_argument("backfill_dir", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    result = generate_feature_backfill_report(args.backfill_dir, args.output)
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def _batch_agent_geometry() -> None:
     parser = argparse.ArgumentParser(description="Run frozen geometry through the durable agent")
     parser.add_argument("manifest", type=Path)
@@ -443,6 +453,9 @@ def main() -> None:
         "geometry-batch": (_batch_geometry, "run a geometry-grounded agent campaign"),
         "geometry-feature-backfill": (
             _backfill_geometry_features, "backfill native face localization",
+        ),
+        "geometry-feature-report": (
+            _report_geometry_features, "report native face localization diagnostics",
         ),
         "agent-geometry-batch": (_batch_agent_geometry, "run geometry through the durable agent"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),

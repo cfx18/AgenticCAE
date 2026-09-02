@@ -51,7 +51,10 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
     selection_path.write_text(json.dumps(selection), encoding="utf-8")
     source_files = [
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
+        workspace / "src/cad_evoloop/backends/autocad/topology.py",
+        workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
@@ -77,6 +80,11 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
     assert set(campaign_manifest["runtime_environment"]["packages"]) == {
         "cadquery-ocp", "numpy", "scipy", "trimesh",
     }
+    assert {
+        "src/cad_evoloop/evaluation/geometry_features.py",
+        "src/cad_evoloop/backends/autocad/topology.py",
+        "mcp/autocad-topology/EvoCadTopology.cs",
+    } <= set(campaign_manifest["agent_source_hashes"])
 
 
 def test_preflight_reports_missing_geometry_distribution() -> None:
