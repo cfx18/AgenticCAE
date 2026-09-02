@@ -40,6 +40,7 @@ from cad_evoloop.paths import project_root
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
 AGENT_CONDITION = "durable-kernel-compat-v1"
 HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-v1"
+GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
 
 
@@ -290,7 +291,9 @@ def _create_sample_project(
         contract_id=contract.contract_id,
         input_artifact_ids=tuple(input_ids),
         dependencies=dependencies,
-        max_attempts=1,
+        # The inner geometry loop owns modeling iterations. This second outer
+        # attempt is reserved for one durable recovery after host interruption.
+        max_attempts=GEOMETRY_WORK_UNIT_MAX_ATTEMPTS,
         parameters={"sample_id": sample["sample_id"]},
     )
     work_units.append(unit)

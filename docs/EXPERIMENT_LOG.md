@@ -176,3 +176,12 @@ three samples under `durable-kernel-human-feedback-v1`: two repairs and one
 durable human gate. No model inference was performed. The follow-up campaign is
 an intervention study and must not replace or be pooled with the original
 30-sample Pass@1 or strict-pass measurements.
+
+The first live feedback execution was externally interrupted after its work
+unit entered `running`. The event chain correctly recorded
+`work_unit.interrupted`, but the compatibility plan had only one outer attempt,
+so recovery exhausted the work unit before it could re-enter the executor. The
+failed campaign remains local evidence and is not reused. Geometry work units
+now reserve two outer attempts: one normal execution plus one host-interruption
+recovery. The independent inner Agent loop retains its original 12-iteration
+safety ceiling. A new campaign identifier is required for the corrected run.

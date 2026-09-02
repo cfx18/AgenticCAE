@@ -94,6 +94,28 @@ def test_preflight_reports_missing_geometry_distribution() -> None:
         agent_geometry_campaign.require_geometry_environment(environment)
 
 
+def test_geometry_work_unit_reserves_one_host_interruption_recovery(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    sample_dir = data / "sample"
+    sample_dir.mkdir(parents=True)
+    (sample_dir / "input.png").write_bytes(b"input")
+    manifest = data / "manifest.json"
+    manifest.write_text('{"samples":[]}', encoding="utf-8")
+
+    store = agent_geometry_campaign._create_sample_project(
+        projects_root=tmp_path / "projects",
+        campaign="recovery-test",
+        sample={"sample_id": "sample:1", "input_images": ["sample/input.png"]},
+        manifest_path=manifest,
+        model="gpt-5.6-sol",
+    )
+
+    unit = store.load()["work_units"]["geometry-reconstruction"]
+    assert unit["max_attempts"] == 2
+
+
 def test_feedback_only_campaign_schedules_actionable_reviewed_samples(
     tmp_path: Path, monkeypatch,
 ) -> None:
