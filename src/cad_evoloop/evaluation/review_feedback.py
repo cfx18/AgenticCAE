@@ -69,6 +69,24 @@ def _route(records: list[dict[str, Any]]) -> str:
     return "evaluation_only"
 
 
+def _agent_instruction(route: str) -> str:
+    if route == "agent_repair":
+        return (
+            "Correct every geometry or reasoning defect described by issue_types, "
+            "findings, and review notes, then rerun native verification. A review's "
+            "recommended_action describes evaluation workflow and never means that "
+            "the CAD geometry should be kept unchanged."
+        )
+    if route == "human_clarification":
+        return (
+            "Do not infer missing engineering requirements. Block modeling and ask "
+            "the listed clarification questions until a bound human response exists."
+        )
+    if route == "system_improvement":
+        return "Do not change sample geometry; route this evidence to system improvement."
+    return "Retain this adjudication as evaluation evidence without changing geometry."
+
+
 def _agent_visible_review(record: dict[str, Any]) -> dict[str, Any]:
     binding = record["binding"]
     return {
@@ -133,6 +151,7 @@ def ingest_human_reviews(
         sample = {
             "sample_id": sample_id,
             "route": route,
+            "agent_instruction": _agent_instruction(route),
             "requires_human_clarification": route == "human_clarification",
             "issue_types": issues,
             "clarification_questions": (

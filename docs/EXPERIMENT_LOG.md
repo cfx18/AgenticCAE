@@ -185,3 +185,16 @@ failed campaign remains local evidence and is not reused. Geometry work units
 now reserve two outer attempts: one normal execution plus one host-interruption
 recovery. The independent inner Agent loop retains its original 12-iteration
 safety ceiling. A new campaign identifier is required for the corrected run.
+
+The next live preflight (`agent-geometry-30-sol-human-feedback-v2`) was stopped
+during its first model turn. Its trajectory showed that the Agent opened the
+feedback through PowerShell, which partially corrupted non-ASCII review text in
+the captured console stream. It also interpreted the review record's
+`recommended_action: keep` as an instruction to preserve the geometry, despite
+the `agent_geometry` issue and repair route. This execution is not scored.
+
+The feedback compiler now emits a route-specific `agent_instruction`, explicitly
+separates evaluator workflow actions from modeling actions, and embeds the full
+UTF-8 feedback JSON directly in every model and repair prompt. The staged file
+remains an auditable copy. Corrected feedback manifest:
+`b48ccd1a1976c9852ac7ee35b2b6ead6f5e838a410eca6e862bb89cfa68fea3b`.

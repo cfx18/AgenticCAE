@@ -478,6 +478,42 @@ def test_repair_prompt_distinguishes_best_and_latest_verdict(tmp_path, monkeypat
     assert "a002.json" in value
 
 
+def test_human_review_text_is_embedded_in_prompt_without_console_round_trip(
+    tmp_path, monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    template = tmp_path / "model.md"
+    template.write_text(
+        "$candidate\n$previous_candidate\n$verdict\n$latest_verdict\n$reflection\n"
+        "$sample_id\n$run_id\n$attempt_id\n$skill_path\n",
+        encoding="utf-8",
+    )
+    feedback = tmp_path / "human-feedback.json"
+    feedback.write_text(json.dumps({
+        "sample_id": "sample:1",
+        "route": "agent_repair",
+        "agent_instruction": "Correct every geometry defect.",
+        "reviews": [{
+            "recommended_action": "keep",
+            "notes": "齿轮没画对，打孔没打对。",
+        }],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    value = geometry_campaign._prompt(
+        template,
+        sample_id="sample:1",
+        run_id="run",
+        attempt_id="a001",
+        candidate=tmp_path / "candidate.dwg",
+        human_feedback=feedback,
+    )
+
+    assert "齿轮没画对，打孔没打对。" in value
+    assert "recommended_action describes evaluation workflow" in value
+    assert "BEGIN HUMAN FEEDBACK JSON" in value
+
+
 def test_safety_stop_does_not_treat_stagnation_as_an_automatic_stop() -> None:
     assert geometry_campaign.safety_stop_reason(
         passed=False, iteration=3, max_iterations=12,

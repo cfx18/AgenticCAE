@@ -210,6 +210,7 @@ def test_verified_reviews_compile_to_deidentified_agent_feedback(tmp_path: Path)
     sample = loaded["samples"]["sample:1"]
     assert feedback["active_review_count"] == 1
     assert sample["route"] == "human_clarification"
+    assert sample["agent_instruction"].startswith("Do not infer")
     assert sample["requires_human_clarification"] is True
     assert "first step height" in sample["clarification_questions"][0]
     assert "reviewer-1" not in feedback_path.read_text(encoding="utf-8")
