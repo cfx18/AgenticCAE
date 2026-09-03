@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from cad_evoloop.evaluation.agent_geometry_report import (
+    _load_baseline_results,
     compare_sol_campaigns,
     materialize_agent_campaign,
     render_agent_evaluation_figure,
@@ -64,6 +65,18 @@ def test_materializes_results_in_frozen_plan_order(tmp_path: Path) -> None:
         "agent_geometry_report.py", "geometry_report.py",
     }
     assert json.loads((campaign / "campaign-manifest.json").read_text())["models"][0]["name"] == "gpt-5.6-sol"
+    assert [row["sample_id"] for row in _load_baseline_results(campaign)] == [
+        "sample:2", "sample:1",
+    ]
+
+
+def test_loads_baseline_from_report_snapshot(tmp_path: Path) -> None:
+    report = tmp_path / "report"
+    report.mkdir()
+    expected = [result("sample:1", 91, False, tmp_path)]
+    (report / "results.json").write_text(json.dumps(expected), encoding="utf-8")
+
+    assert _load_baseline_results(report) == expected
 
 
 def test_materialization_records_human_block_without_fabricating_result(
@@ -128,6 +141,8 @@ def test_compares_only_paired_sol_samples(tmp_path: Path) -> None:
     comparison = compare_sol_campaigns(candidate, baseline)
 
     assert comparison["paired_samples"] == 1
+    assert comparison["baseline_campaign"] == "agent-test"
+    assert comparison["candidate_campaign"] == "agent-test"
     assert comparison["strict_pass_gains"] == 1
     assert comparison["mean_score_delta"] == 10
     assert comparison["pairs"][0]["sample_id"] == "sample:1"

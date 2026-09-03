@@ -124,6 +124,19 @@ def materialize_agent_campaign(campaign_dir: str | Path) -> dict[str, Any]:
     return {"manifest": compatibility_manifest, "results": results, "provenance": provenance}
 
 
+def _load_baseline_results(path: str | Path) -> list[dict[str, Any]]:
+    """Load a report snapshot or materialize an immutable agent campaign."""
+    baseline_dir = Path(path).resolve()
+    results_path = baseline_dir / "results.json"
+    if results_path.is_file():
+        return _read_json(results_path)
+    if (baseline_dir / "agent-campaign-manifest.json").is_file():
+        return materialize_agent_campaign(baseline_dir)["results"]
+    raise FileNotFoundError(
+        f"Baseline must contain results.json or agent-campaign-manifest.json: {baseline_dir}"
+    )
+
+
 def _run_metrics(result: dict[str, Any]) -> dict[str, Any]:
     attempts = result.get("attempts", [])
     return {
@@ -193,6 +206,14 @@ def compare_sol_campaigns(
     return {
         "schema_version": "1.0",
         "model": model,
+        "baseline_campaign": (
+            str(baseline_results[0].get("campaign", "baseline"))
+            if baseline_results else "baseline"
+        ),
+        "candidate_campaign": (
+            str(candidate_results[0].get("campaign", "candidate"))
+            if candidate_results else "candidate"
+        ),
         "paired_samples": len(pairs),
         "baseline_strict_passes": sum(row["baseline_passed"] for row in pairs),
         "candidate_strict_passes": sum(row["candidate_passed"] for row in pairs),
@@ -436,6 +457,7 @@ def generate_agent_geometry_report(
     output_dir = Path(output_dir).resolve()
     materialized = materialize_agent_campaign(campaign_dir)
     summary = generate_geometry_campaign_report(campaign_dir, output_dir)
+    _write_json_atomic(output_dir / "results.json", materialized["results"])
     trajectory_summary = summarize_long_horizon_outcomes(materialized["results"])
     _write_json_atomic(output_dir / "agent-trajectory-summary.json", trajectory_summary)
     render_agent_evaluation_figure(
@@ -451,7 +473,7 @@ def generate_agent_geometry_report(
         )
     comparison = None
     if baseline_dir is not None:
-        baseline_results = _read_json(Path(baseline_dir).resolve() / "results.json")
+        baseline_results = _load_baseline_results(baseline_dir)
         comparison = compare_sol_campaigns(materialized["results"], baseline_results)
         _write_json_atomic(output_dir / "paired-sol-comparison.json", comparison)
         rows = comparison["pairs"]
@@ -466,9 +488,11 @@ def generate_agent_geometry_report(
             count = comparison["paired_samples"]
             stream.write(
                 "\n## Paired Agent comparison\n\n"
-                "Same `gpt-5.6-sol` model, reasoning effort, frozen 30-sample selection, and "
-                "strict verifier. This is a paired historical comparison, not a randomized A/B.\n\n"
-                "| Metric | Baseline Agent | Native-feedback Agent | Delta |\n"
+                "Same `gpt-5.6-sol` model and strict verifier over the paired sample "
+                "intersection. This is a paired historical comparison, not a randomized A/B.\n\n"
+                f"Baseline: `{comparison['baseline_campaign']}`. Candidate: "
+                f"`{comparison['candidate_campaign']}`.\n\n"
+                "| Metric | Baseline | Candidate | Delta |\n"
                 "| --- | ---: | ---: | ---: |\n"
                 f"| Strict final | {comparison['baseline_strict_passes']}/{count} | "
                 f"{comparison['candidate_strict_passes']}/{count} | "

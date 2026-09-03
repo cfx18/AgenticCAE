@@ -117,3 +117,25 @@ The completed `agent-geometry-30-sol-native-feedback-v3` campaign remains bound
 to `durable-kernel-checkpoint-v2`. Boolean lineage begins a new condition,
 `durable-kernel-boolean-lineage-v4`. Results from the two conditions must not be
 pooled without reporting the intervention.
+
+## Pilot findings
+
+The two-sample V2 pilot confirmed that fingerprint propagation can identify an
+inherited face from an earlier modeling stage and prevent validation-only jobs
+from receiving geometric blame. During the ortho2cad recovery replicate, the
+Agent used this evidence to preserve implicated inherited faces, reject
+regressed parameter sets, and run increasingly narrow parameter experiments.
+
+Two attribution limits became concrete:
+
+1. Several declared operations inside one Core Console job remain an operation
+   group. The protocol cannot infer an exact within-script Boolean boundary.
+2. A near-pass can have zero localized regions under the fixed distance
+   threshold. In that case the face lineage is present, but no residual region
+   exists to connect to it.
+
+The next instrumentation candidate is an optional intra-job lineage checkpoint
+that records an operation boundary without constraining which AutoCAD or
+AutoLISP geometry commands may execute. Adaptive near-pass localization and
+resumption after a safety-censored final reflection should be evaluated
+separately so their effects are not conflated with lineage.

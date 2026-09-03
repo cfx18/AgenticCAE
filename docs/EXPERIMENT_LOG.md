@@ -400,3 +400,57 @@ set without new contradictory evidence. Offline replay of the unchanged V1
 artifacts linked all major tooth mismatch regions only to
 `op03_tooth_spaces/tooth_pattern`; keyway and radial-hole regions linked to their
 own operations, and `op07_final_validation` disappeared from candidates.
+
+### Lineage pilot V2 and recovery replicate
+
+Campaign `agent-geometry-lineage-pilot-sol-v2` evaluated the corrected
+multi-job lineage condition on the same targeted pair. This remains a diagnostic
+pilot, not a population estimate:
+
+| Sample | Pre-lineage V3 | Boolean-lineage V2 | Attempts | Stop |
+| --- | ---: | ---: | ---: | --- |
+| `omnimech:4` | 99.77 | 99.87 | 8 | Agent stop |
+| `ortho2cad:00186338` | 99.15 | 99.68 | 6 | decision transport unavailable |
+
+Neither condition strictly passed either sample. The V2 mean selected-score
+delta over these two historical pairs is `+0.315`, but the ortho2cad run is
+runtime-censored and the comparison is neither randomized nor large enough for
+an accuracy claim.
+
+The interrupted ortho2cad sample was repeated unchanged in the separately
+frozen campaign `agent-geometry-lineage-pilot-sol-v2-recovery1`. It improved
+from `41.85` to selected checkpoint `a013=99.25` across 14 attempts. The final
+attempt scored `99.03`; the Agent requested another distinct repair, so the run
+is correctly recorded as `max_iterations` safety-censored rather than an
+autonomous stop. Project integrity passed over 275 checked files and 349 ledger
+events.
+
+The recovery trajectory supplies qualitative evidence unavailable in the old
+condition. It cited inherited native faces when preserving geometry, restarted
+from the best checkpoint after score regressions, separated IoU gains from
+volume regressions, derived volume-balanced parameter hypotheses, and recovered
+five Core Console job failures without desktop intervention. A single-parameter
+lever-notch experiment improved the best score from `98.82` to `98.91`.
+
+Important limitations remain. The Agent often placed several declared
+operations in one Core Console job, leaving changed faces attributable only to
+an operation group. The near-perfect `omnimech:4/a004` result produced no
+surface regions at the fixed localization threshold, so lineage had no residual
+region to explain. Finally, the safety cap cannot yet resume the same project
+and thread as a follow-on campaign even when the last reflection requests a
+defensible next experiment.
+
+Artifacts:
+
+- original V2 report and paired comparison:
+  `reports/generated/agent-geometry-lineage-pilot-sol-v2-vs-native-feedback-v3/`;
+- original V2 review: `http://127.0.0.1:8767/`;
+- recovery report:
+  `reports/generated/agent-geometry-lineage-pilot-sol-v2-recovery1-vs-native-feedback-v3/`;
+- recovery review: `http://127.0.0.1:8768/`;
+- recovery review bundle SHA-256:
+  `c341c7c157475a22c98d47da3a5b5255c320b8753641556cc778a73bbab4db5e`.
+
+The report pipeline was also corrected to persist normalized `results.json`,
+accept either a raw campaign or report snapshot as a baseline, and label paired
+campaigns generically instead of hard-coding a 30-sample native-feedback name.
