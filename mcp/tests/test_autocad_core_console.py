@@ -99,5 +99,58 @@ def test_operation_manifest_is_durable_but_does_not_change_lisp(tmp_path: Path, 
     finished = wait_for_terminal(manager, job["job_id"])
     request = __import__("json").loads((Path(finished["job_dir"]) / "request.json").read_text())
     assert request["operation_manifest"] == manifest
-    assert finished["operation_manifest"] == [{**manifest[0], "observed_entity_handles": []}]
+    recorded = finished["operation_manifest"][0]
+    assert recorded["operation_id"] == "op-hole"
+    assert recorded["observed_entity_handles"] == []
+    assert recorded["mcp_job_id"] == finished["job_id"]
+    assert recorded["input_path"] == str(template)
+    assert recorded["output_path"] == str(tmp_path / "out.dwg")
+    assert recorded["topology_before_path"] is None
+    assert recorded["topology_after_path"] is None
     assert '(command "_.BOX")' in (Path(finished["job_dir"]) / "payload.lsp").read_text()
+
+
+def test_boolean_lineage_capture_wraps_unrestricted_lisp_with_native_snapshots(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    executable = tmp_path / "accoreconsole.exe"
+    template = tmp_path / "acadiso.dwt"
+    plugin = tmp_path / "EvoCadTopology.dll"
+    for path, value in ((executable, b"exe"), (template, b"seed"), (plugin, b"dll")):
+        path.write_bytes(value)
+
+    class FakeProcess:
+        pid = 125
+        returncode = 0
+
+        def __init__(self, args, **kwargs):
+            self.script = Path(args[4])
+            self.environment = kwargs["env"]
+
+        def communicate(self, timeout=None):
+            (self.script.parent / "success.txt").write_text("ok\n", encoding="utf-8")
+            for key in ("EVOCAD_LINEAGE_BEFORE_OUTPUT", "EVOCAD_LINEAGE_AFTER_OUTPUT"):
+                Path(self.environment[key]).write_text(
+                    '{"schema_version":"1.0","entities":[],"errors":[]}\n', encoding="utf-8",
+                )
+            return b"done", b""
+
+        def poll(self): return self.returncode
+        def terminate(self): self.returncode = 1
+        def kill(self): self.returncode = 1
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    manager = core.CoreConsoleJobManager(
+        tmp_path, executable, template, topology_plugin=plugin,
+    )
+    manifest = [{"operation_id": "op-hole", "intent": "subtract through hole"}]
+    job = manager.start("(command \"_.SUBTRACT\")", str(tmp_path / "out.dwg"), operation_manifest=manifest)
+    finished = wait_for_terminal(manager, job["job_id"])
+
+    script = (Path(finished["job_dir"]) / "run.scr").read_text(encoding="utf-8")
+    assert script.index("EVOCAD_EXPORT_LINEAGE_BEFORE") < script.index("payload.lsp")
+    assert script.index("payload.lsp") < script.index("EVOCAD_EXPORT_LINEAGE_AFTER")
+    assert finished["boolean_lineage_capture"]["status"] == "succeeded"
+    recorded = finished["operation_manifest"][0]
+    assert Path(recorded["topology_before_path"]).is_file()
+    assert Path(recorded["topology_after_path"]).is_file()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from cad_evoloop.evaluation.geometry_features import (
     apply_exact_face_queries,
+    build_boolean_face_lineage,
     build_feature_graph,
     enrich_localization_with_topology,
     face_query_rows,
@@ -28,6 +29,43 @@ def test_feature_graph_keeps_face_adjacency_and_conservative_hole_candidate() ->
     assert graph["edges"] == [{"source": "2A:f1", "target": "2A:f2", "relation": "shares_brep_edge"}]
     assert graph["feature_candidates"][0]["kind"] == "hole_candidate"
     assert graph["feature_candidates"][0]["parameters"]["radius"] == 1
+
+
+def test_boolean_lineage_distinguishes_inherited_and_operation_created_faces() -> None:
+    parent = sample_topology()
+    parent["entities"][0]["faces"] = parent["entities"][0]["faces"][:1]
+    lineage = build_boolean_face_lineage(
+        sample_topology(), parent,
+        [{
+            "operation_id": "op-hole", "intent": "subtract through hole",
+            "operation_type": "subtract", "feature_id": "mount-hole",
+            "parameters": {"diameter": 2}, "target_entity_handles": ["2A"],
+        }],
+    )
+
+    by_face = {item["face_id"]: item for item in lineage["faces"]}
+    assert by_face["f1"]["status"] == "inherited"
+    assert by_face["f1"]["candidate_operation_ids"] == []
+    assert by_face["f2"]["status"] == "created_or_modified"
+    assert by_face["f2"]["candidate_operation_ids"] == ["op-hole"]
+    assert by_face["f2"]["confidence"] == "medium"
+    assert lineage["snapshot_comparison"]["inherited_face_count"] == 1
+    assert lineage["operation_graph"]["nodes"][0]["parameters"] == {"diameter": 2}
+
+
+def test_boolean_lineage_marks_multi_operation_job_as_ambiguous() -> None:
+    lineage = build_boolean_face_lineage(
+        sample_topology(), {"entities": []},
+        [
+            {"operation_id": "op-base", "intent": "base"},
+            {"operation_id": "op-hole", "intent": "hole", "parent_operation_ids": ["op-base"]},
+        ],
+    )
+    assert lineage["faces"][0]["confidence"] == "low"
+    assert lineage["faces"][0]["candidate_operation_ids"] == ["op-base", "op-hole"]
+    assert lineage["operation_graph"]["edges"] == [{
+        "source": "op-base", "target": "op-hole", "relation": "declared_parent",
+    }]
 
 
 def test_localization_maps_region_to_face_feature_and_declared_operation() -> None:

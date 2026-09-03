@@ -17,9 +17,26 @@ namespace EvoCad.AutoCAD
         [CommandMethod("EVOCAD_EXPORT_TOPOLOGY", CommandFlags.Session)]
         public static void ExportTopology()
         {
-            string output = Environment.GetEnvironmentVariable("EVOCAD_TOPOLOGY_OUTPUT");
+            ExportTopologyTo("EVOCAD_TOPOLOGY_OUTPUT", "EVOCAD_TOPOLOGY_OK");
+        }
+
+        [CommandMethod("EVOCAD_EXPORT_LINEAGE_BEFORE", CommandFlags.Session)]
+        public static void ExportLineageBefore()
+        {
+            ExportTopologyTo("EVOCAD_LINEAGE_BEFORE_OUTPUT", "EVOCAD_LINEAGE_BEFORE_OK");
+        }
+
+        [CommandMethod("EVOCAD_EXPORT_LINEAGE_AFTER", CommandFlags.Session)]
+        public static void ExportLineageAfter()
+        {
+            ExportTopologyTo("EVOCAD_LINEAGE_AFTER_OUTPUT", "EVOCAD_LINEAGE_AFTER_OK");
+        }
+
+        private static void ExportTopologyTo(string environmentVariable, string successMarker)
+        {
+            string output = Environment.GetEnvironmentVariable(environmentVariable);
             if (String.IsNullOrWhiteSpace(output))
-                throw new InvalidOperationException("EVOCAD_TOPOLOGY_OUTPUT is not set");
+                throw new InvalidOperationException(environmentVariable + " is not set");
 
             Document document = Application.DocumentManager.MdiActiveDocument;
             Database database = document.Database;
@@ -65,7 +82,7 @@ namespace EvoCad.AutoCAD
             string fullPath = Path.GetFullPath(output);
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
             File.WriteAllText(fullPath, json + Environment.NewLine, new UTF8Encoding(false));
-            document.Editor.WriteMessage("\nEVOCAD_TOPOLOGY_OK " + fullPath);
+            document.Editor.WriteMessage("\n" + successMarker + " " + fullPath);
         }
 
         [CommandMethod("EVOCAD_LOCATE_POINTS", CommandFlags.Session)]

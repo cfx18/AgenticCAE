@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-agent-geometry-lineage-pilot-v1",
+  "kind": "frozen-agent-evaluation-selection",
+  "source_split": "geometry-50-split-v1.json",
+  "source_split_sha256": "79022d2c252ff318b49b76e853f467c336b135654b659b243aadccd916929578",
+  "source_manifest_sha256": "01672e0fc8abbfebecfe352a4e4a88ee93a383b849d5b8213a6b08acc6c8c280",
+  "selection_strategy": "targeted diagnostic pair: one repeated-feature failure and one safety-censored near-pass; not a statistical evaluation",
+  "sample_count": 2,
+  "strata": {
+    "dev": 2,
+    "validation": 0,
+    "hidden_test": 0,
+    "omnimech": 1,
+    "ortho2cad": 1
+  },
+  "sample_ids": [
+    "omnimech:4",
+    "ortho2cad:00186338"
+  ],
+  "selection_sha256": "1c007658252f9fb62097052851afee9203525bed34358a00175ab86f19c46fc9"
+}

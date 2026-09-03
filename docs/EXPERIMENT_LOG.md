@@ -341,3 +341,36 @@ Campaign `agent-geometry-30-sol-native-feedback-v2` remains interrupted evidence
 under its original source binding. It must not be resumed with the new code. The
 replacement 30-sample campaign uses a new identifier and freezes the checkpoint
 condition before execution.
+
+## 2026-09-03: Native Feedback V3 Complete and Boolean Lineage Condition
+
+Campaign `agent-geometry-30-sol-native-feedback-v3` completed 30/30 projects
+under its frozen `durable-kernel-checkpoint-v2` condition:
+
+- Pass@1: 14/30 (`46.67%`);
+- strict final pass: 26/30 (`86.67%`);
+- first-attempt mean: `82.02`;
+- selected-checkpoint mean: `98.76`;
+- attempts: 93, mean `3.10`;
+- stops: 26 strict pass, 3 Agent stop, 1 max-iteration safety censor;
+- project integrity: 30/30.
+
+Against `agent-geometry-30-sol-v2` on the same 30 samples and
+`gpt-5.6-sol/medium`, strict passage changed from 22/30 to 26/30 with four gains
+and zero losses. Mean selected score changed by `+0.9793`; the paired strict-pass
+sign test is `p=0.125`. This is a historical paired comparison, not a randomized
+A/B, and does not isolate one implementation component.
+
+Failure-path inspection showed that spatial localization still mapped each
+region to roughly 2-6 operations through a shared final entity handle. The next
+condition, `durable-kernel-boolean-lineage-v3`, therefore captures native BRep
+topology immediately before and after every unrestricted Core Console job. It
+uses stable face fingerprints to distinguish inherited faces from
+created-or-modified faces and carries parameter-bearing operation DAG nodes into
+verifier feedback. Multi-operation jobs remain explicitly ambiguous.
+
+Real AutoCAD validation passed for primitive creation and subtractive Boolean
+editing. The subtractive check retained four unchanged box faces and attributed
+the two modified end faces plus the new cylindrical wall to a single centered
+through-hole operation. Detailed protocol and limits are recorded in
+`docs/BOOLEAN_FACE_LINEAGE.md`.

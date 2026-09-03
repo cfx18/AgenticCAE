@@ -197,6 +197,7 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
         workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/evaluation/geometry_score.py",
         workspace / "src/cad_evoloop/evaluation/geometry_split.py",
@@ -488,6 +489,26 @@ def _operation_manifest_from_audit(audit_path: Path) -> list[dict[str, Any]]:
                 ]))
                 operations[str(operation["operation_id"])] = normalized
     return list(operations.values())
+
+
+def _lineage_parent_topology(
+    operations: list[dict[str, Any]], candidate: Path,
+) -> dict[str, Any] | None:
+    """Load the exact pre-operation snapshot for the job that produced candidate."""
+    candidate = candidate.resolve()
+    for operation in reversed(operations):
+        output = operation.get("output_path")
+        before = operation.get("topology_before_path")
+        if not output or not before:
+            continue
+        try:
+            matches_candidate = Path(output).resolve() == candidate
+        except OSError:
+            matches_candidate = False
+        before_path = Path(before)
+        if matches_candidate and before_path.is_file():
+            return load_topology(before_path)
+    return None
 
 
 def _validate_agent_decision(value: dict[str, Any]) -> None:
@@ -919,11 +940,13 @@ def _execute_geometry_action_and_verifier(
                         ledger.add_artifact(
                             run_dir, attempt_id, face_query_output, role="candidate-face-query",
                         )
+                    operations = _operation_manifest_from_audit(audit_path)
                     raw_score = enrich_score_with_topology(
                         raw_score, load_topology(candidate_topology),
-                        operations=_operation_manifest_from_audit(audit_path),
+                        operations=operations,
                         query=(json.loads(face_query_output.read_text(encoding="utf-8"))
                                if face_query_output.is_file() else None),
+                        parent_topology=_lineage_parent_topology(operations, candidate),
                     )
                 except Exception as exc:
                     topology_error = repr(exc)

@@ -130,6 +130,7 @@ def _run_metrics(result: dict[str, Any]) -> dict[str, Any]:
         "score": float(result.get("score", 0.0)),
         "passed": bool(result.get("passed")),
         "first_score": float(attempts[0].get("score", 0.0)) if attempts else 0.0,
+        "first_passed": bool(attempts[0].get("passed")) if attempts else False,
         "attempts": len(attempts),
         "elapsed_seconds": sum(float(row.get("elapsed_seconds", 0.0)) for row in attempts),
         "input_tokens": sum(
@@ -177,20 +178,40 @@ def compare_sol_campaigns(
     gains = sum(not row["baseline_passed"] and row["candidate_passed"] for row in pairs)
     losses = sum(row["baseline_passed"] and not row["candidate_passed"] for row in pairs)
     deltas = [row["score_delta"] for row in pairs]
+    by_dataset = []
+    for dataset in sorted({row["sample_id"].split(":", 1)[0] for row in pairs}):
+        subset = [row for row in pairs if row["sample_id"].startswith(dataset + ":")]
+        by_dataset.append({
+            "dataset": dataset,
+            "paired_samples": len(subset),
+            "baseline_strict_passes": sum(row["baseline_passed"] for row in subset),
+            "candidate_strict_passes": sum(row["candidate_passed"] for row in subset),
+            "mean_score_delta": round(statistics.mean(row["score_delta"] for row in subset), 4),
+        })
+    baseline_metrics = [_run_metrics(baseline[sample_id]) for sample_id in sorted(candidate.keys() & baseline.keys())]
+    candidate_metrics = [_run_metrics(candidate[sample_id]) for sample_id in sorted(candidate.keys() & baseline.keys())]
     return {
         "schema_version": "1.0",
         "model": model,
         "paired_samples": len(pairs),
         "baseline_strict_passes": sum(row["baseline_passed"] for row in pairs),
         "candidate_strict_passes": sum(row["candidate_passed"] for row in pairs),
+        "baseline_pass_at_1": sum(row["first_passed"] for row in baseline_metrics),
+        "candidate_pass_at_1": sum(row["first_passed"] for row in candidate_metrics),
+        "baseline_selected_mean": round(statistics.mean(row["score"] for row in baseline_metrics), 4) if pairs else None,
+        "candidate_selected_mean": round(statistics.mean(row["score"] for row in candidate_metrics), 4) if pairs else None,
+        "baseline_mean_attempts": round(statistics.mean(row["attempts"] for row in baseline_metrics), 4) if pairs else None,
+        "candidate_mean_attempts": round(statistics.mean(row["attempts"] for row in candidate_metrics), 4) if pairs else None,
         "strict_pass_gains": gains,
         "strict_pass_losses": losses,
         "paired_sign_test_p": _sign_test_two_sided(gains, losses),
         "mean_score_delta": round(statistics.mean(deltas), 4) if deltas else None,
         "median_score_delta": round(statistics.median(deltas), 4) if deltas else None,
+        "by_dataset": by_dataset,
         "interpretation": (
-            "Descriptive paired rerun only. The durable-kernel compatibility condition keeps "
-            "the inner modeling policy unchanged, so differences are not a causal Agent-architecture effect."
+            "Descriptive paired historical comparison with the same model and frozen samples. "
+            "It is not randomized and may include multiple implementation changes, so it does not "
+            "by itself identify which Agent component caused the difference."
         ),
         "pairs": pairs,
     }
@@ -441,6 +462,29 @@ def generate_agent_geometry_report(
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+        with (output_dir / "report.md").open("a", encoding="utf-8") as stream:
+            count = comparison["paired_samples"]
+            stream.write(
+                "\n## Paired Agent comparison\n\n"
+                "Same `gpt-5.6-sol` model, reasoning effort, frozen 30-sample selection, and "
+                "strict verifier. This is a paired historical comparison, not a randomized A/B.\n\n"
+                "| Metric | Baseline Agent | Native-feedback Agent | Delta |\n"
+                "| --- | ---: | ---: | ---: |\n"
+                f"| Strict final | {comparison['baseline_strict_passes']}/{count} | "
+                f"{comparison['candidate_strict_passes']}/{count} | "
+                f"{comparison['candidate_strict_passes'] - comparison['baseline_strict_passes']:+d} |\n"
+                f"| Pass@1 | {comparison['baseline_pass_at_1']}/{count} | "
+                f"{comparison['candidate_pass_at_1']}/{count} | "
+                f"{comparison['candidate_pass_at_1'] - comparison['baseline_pass_at_1']:+d} |\n"
+                f"| Selected mean | {comparison['baseline_selected_mean']:.2f} | "
+                f"{comparison['candidate_selected_mean']:.2f} | "
+                f"{comparison['mean_score_delta']:+.2f} |\n"
+                f"| Mean attempts | {comparison['baseline_mean_attempts']:.2f} | "
+                f"{comparison['candidate_mean_attempts']:.2f} | "
+                f"{comparison['candidate_mean_attempts'] - comparison['baseline_mean_attempts']:+.2f} |\n\n"
+                f"Paired strict-pass sign test: `p={comparison['paired_sign_test_p']}`. "
+                "The complete per-sample table is `paired-sol-comparison.csv`.\n"
+            )
     return {
         "summary": summary,
         "trajectory_summary": trajectory_summary,

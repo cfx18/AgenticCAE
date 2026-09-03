@@ -15,7 +15,7 @@ import winreg
 if __package__:
     from .jobs import CommandJobManager, make_autocad_runner, post_escape_to_window
     from .core_console import CoreConsoleJobManager
-    from .topology import TopologyExportJobManager
+    from .topology import TopologyExportJobManager, build_topology_plugin
 else:  # Supports MCP launch by absolute script path.
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from cad_evoloop.backends.autocad.jobs import (
@@ -24,7 +24,7 @@ else:  # Supports MCP launch by absolute script path.
         post_escape_to_window,
     )
     from cad_evoloop.backends.autocad.core_console import CoreConsoleJobManager
-    from cad_evoloop.backends.autocad.topology import TopologyExportJobManager
+    from cad_evoloop.backends.autocad.topology import TopologyExportJobManager, build_topology_plugin
 
 
 WORKSPACE = Path(os.environ.get("AUTOCAD_MCP_WORKSPACE", Path.cwd())).resolve()
@@ -176,7 +176,14 @@ def configure_server(base: Any) -> CommandJobManager:
     global JOB_MANAGER, CORE_MANAGER, TOPOLOGY_MANAGER
     configure_autocad_connection(base)
     manager = CommandJobManager(make_autocad_runner(base), canceller=post_escape_to_window)
-    core_manager = CoreConsoleJobManager(WORKSPACE, CORE_CONSOLE, CORE_TEMPLATE)
+    lineage_plugin = None
+    try:
+        lineage_plugin = build_topology_plugin(WORKSPACE, managed_dir=CORE_CONSOLE.parent)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"AutoCAD Boolean-lineage capture unavailable: {exc}", file=sys.stderr)
+    core_manager = CoreConsoleJobManager(
+        WORKSPACE, CORE_CONSOLE, CORE_TEMPLATE, topology_plugin=lineage_plugin,
+    )
     JOB_MANAGER = manager
     CORE_MANAGER = core_manager
     topology_manager = TopologyExportJobManager(WORKSPACE, CORE_CONSOLE, TOPOLOGY_PLUGIN)
@@ -234,6 +241,7 @@ def configure_server(base: Any) -> CommandJobManager:
             arguments.get("input_path"),
             arguments.get("timeout", 120),
             arguments.get("operation_manifest"),
+            arguments.get("capture_boolean_lineage", True),
         )
 
     def core_status(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -319,6 +327,10 @@ def configure_server(base: Any) -> CommandJobManager:
                         "description": "Optional workspace DWG from a previous stage; defaults to a blank metric template",
                     },
                     "timeout": {"type": "number", "minimum": 0, "maximum": 1800},
+                    "capture_boolean_lineage": {
+                        "type": "boolean",
+                        "description": "Capture read-only native topology before and after this unrestricted job for Boolean face lineage",
+                    },
                     "operation_manifest": {
                         "type": "array",
                         "description": "Optional non-restrictive provenance metadata describing intended modeling operations",
@@ -330,6 +342,11 @@ def configure_server(base: Any) -> CommandJobManager:
                                 "entity_handles": {"type": "array", "items": {"type": "string"}},
                                 "face_fingerprints": {"type": "array", "items": {"type": "string"}},
                                 "feature_ids": {"type": "array", "items": {"type": "string"}},
+                                "operation_type": {"type": "string"},
+                                "feature_id": {"type": "string"},
+                                "parameters": {"type": "object"},
+                                "parent_operation_ids": {"type": "array", "items": {"type": "string"}},
+                                "target_entity_handles": {"type": "array", "items": {"type": "string"}},
                             },
                             "required": ["operation_id", "intent"],
                         },

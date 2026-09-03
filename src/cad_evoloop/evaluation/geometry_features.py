@@ -11,6 +11,7 @@ from typing import Any, Iterable
 
 
 FEATURE_PROTOCOL_ID = "evocad-native-feature-localization-v1"
+BOOLEAN_LINEAGE_PROTOCOL_ID = "evocad-boolean-face-lineage-v1"
 
 
 def _vector(value: Iterable[float]) -> tuple[float, float, float]:
@@ -122,14 +123,143 @@ def build_feature_graph(topology: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _topology_faces(topology: dict[str, Any] | None) -> list[dict[str, Any]]:
+    records = []
+    for entity in (topology or {}).get("entities", []):
+        handle = str(entity.get("handle", ""))
+        for face in entity.get("faces", []):
+            records.append({
+                "node_id": f"{handle}:{face.get('id')}",
+                "entity_handle": handle,
+                "face_id": str(face.get("id", "")),
+                "face_fingerprint": face.get("fingerprint"),
+            })
+    return records
+
+
+def build_boolean_face_lineage(
+    topology: dict[str, Any],
+    parent_topology: dict[str, Any] | None,
+    operations: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Compare native topology snapshots and attach conservative operation ancestry."""
+    current_faces = _topology_faces(topology)
+    parent_faces = _topology_faces(parent_topology)
+    operations = operations or []
+    parent_by_fingerprint: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for face in parent_faces:
+        if face.get("face_fingerprint"):
+            parent_by_fingerprint[str(face["face_fingerprint"])].append(face)
+
+    operation_nodes = []
+    operation_by_id = {}
+    for index, operation in enumerate(operations):
+        operation_id = str(operation.get("operation_id") or f"undeclared-{index + 1}")
+        node = {
+            "operation_id": operation_id,
+            "intent": operation.get("intent"),
+            "operation_type": operation.get("operation_type"),
+            "feature_id": operation.get("feature_id"),
+            "parameters": deepcopy(operation.get("parameters") or {}),
+            "parent_operation_ids": [str(item) for item in operation.get("parent_operation_ids", [])],
+            "mcp_job_id": operation.get("mcp_job_id"),
+        }
+        operation_nodes.append(node)
+        operation_by_id[operation_id] = operation
+
+    face_lineage = []
+    inherited_fingerprints = set()
+    for face in current_faces:
+        fingerprint = str(face.get("face_fingerprint") or "")
+        parents = parent_by_fingerprint.get(fingerprint, []) if fingerprint else []
+        declared = [
+            operation_id for operation_id, operation in operation_by_id.items()
+            if fingerprint and fingerprint in {
+                str(item) for item in operation.get("face_fingerprints", [])
+            }
+        ]
+        if parents:
+            inherited_fingerprints.add(fingerprint)
+            status = "inherited"
+            candidate_operations: list[str] = []
+            evidence = ["stable_face_fingerprint"]
+            confidence = "high" if len(parents) == 1 else "medium"
+        else:
+            status = "created_or_modified"
+            if declared:
+                candidate_operations = declared
+                evidence = ["declared_face_fingerprint"]
+                confidence = "high"
+            else:
+                handle_candidates = []
+                for operation_id, operation in operation_by_id.items():
+                    handles = {
+                        str(item)
+                        for key in ("target_entity_handles", "entity_handles", "observed_entity_handles")
+                        for item in operation.get(key, [])
+                    }
+                    if face["entity_handle"] in handles:
+                        handle_candidates.append(operation_id)
+                candidate_operations = handle_candidates or list(operation_by_id)
+                evidence = [
+                    "topology_snapshot_delta",
+                    "target_entity_handle" if handle_candidates else "mcp_job_operation_group",
+                ]
+                confidence = "medium" if len(candidate_operations) == 1 else "low"
+        face_lineage.append({
+            **face,
+            "status": status,
+            "parent_face_candidates": [item["node_id"] for item in parents],
+            "candidate_operation_ids": candidate_operations,
+            "evidence": evidence,
+            "confidence": confidence,
+        })
+
+    deleted_parent_faces = [
+        face for face in parent_faces
+        if str(face.get("face_fingerprint") or "") not in inherited_fingerprints
+    ]
+    operation_edges = [
+        {"source": parent, "target": node["operation_id"], "relation": "declared_parent"}
+        for node in operation_nodes for parent in node["parent_operation_ids"]
+    ]
+    inherited_count = sum(item["status"] == "inherited" for item in face_lineage)
+    return {
+        "schema_version": "1.0",
+        "protocol": BOOLEAN_LINEAGE_PROTOCOL_ID,
+        "snapshot_comparison": {
+            "parent_face_count": len(parent_faces),
+            "current_face_count": len(current_faces),
+            "inherited_face_count": inherited_count,
+            "created_or_modified_face_count": len(face_lineage) - inherited_count,
+            "deleted_or_modified_parent_face_count": len(deleted_parent_faces),
+        },
+        "operation_graph": {"nodes": operation_nodes, "edges": operation_edges},
+        "faces": face_lineage,
+        "deleted_parent_face_examples": deleted_parent_faces[:32],
+        "interpretation": (
+            "Stable fingerprints prove inheritance. Snapshot-delta faces identify the operation "
+            "group that changed topology; multiple operations in one job remain causally ambiguous."
+        ),
+    }
+
+
 def _operation_candidates(
     face_matches: list[dict[str, Any]], features: list[dict[str, Any]], operations: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     handles = {str(item["entity_handle"]) for item in face_matches}
     fingerprints = {str(item.get("face_fingerprint")) for item in face_matches if item.get("face_fingerprint")}
     feature_ids = {str(item["feature_id"]) for item in features}
+    lineage_evidence: dict[str, list[str]] = defaultdict(list)
+    lineage_confidence: dict[str, list[str]] = defaultdict(list)
+    for face in face_matches:
+        lineage = face.get("boolean_lineage") or {}
+        for operation_id in lineage.get("candidate_operation_ids", []):
+            lineage_evidence[str(operation_id)].extend(lineage.get("evidence", []))
+            lineage_confidence[str(operation_id)].append(str(lineage.get("confidence", "low")))
     results = []
     for operation in operations:
+        operation_id = str(operation.get("operation_id"))
         evidence = []
         if handles & {str(item) for item in operation.get("entity_handles", [])}:
             evidence.append("entity_handle")
@@ -137,12 +267,28 @@ def _operation_candidates(
             evidence.append("face_fingerprint")
         if feature_ids & {str(item) for item in operation.get("feature_ids", [])}:
             evidence.append("feature_id")
+        if operation_id in lineage_evidence:
+            evidence.extend(["boolean_face_lineage", *lineage_evidence[operation_id]])
         if evidence:
+            evidence = list(dict.fromkeys(evidence))
+            lineage_levels = lineage_confidence.get(operation_id, [])
+            if "declared_face_fingerprint" in evidence or "face_fingerprint" in evidence:
+                confidence = "high"
+            elif "boolean_face_lineage" in evidence and lineage_levels == ["medium"]:
+                confidence = "medium"
+            elif evidence == ["entity_handle"] or "mcp_job_operation_group" in evidence:
+                confidence = "low"
+            else:
+                confidence = "medium"
             results.append({
                 "operation_id": operation.get("operation_id"),
                 "intent": operation.get("intent"),
                 "evidence": evidence,
-                "confidence": "high" if "face_fingerprint" in evidence else "medium",
+                "confidence": confidence,
+                "operation_type": operation.get("operation_type"),
+                "feature_id": operation.get("feature_id"),
+                "editable_parameters": deepcopy(operation.get("parameters") or {}),
+                "parent_operation_ids": operation.get("parent_operation_ids", []),
             })
     return results
 
@@ -150,6 +296,7 @@ def _operation_candidates(
 def enrich_localization_with_topology(
     localization: dict[str, Any], topology: dict[str, Any], *, candidate_bounds: list[list[float]],
     truth_bounds: list[list[float]], rotation: list[list[float]], operations: list[dict[str, Any]] | None = None,
+    parent_topology: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach ranked candidate faces, inferred features, and declared operation provenance."""
     result = deepcopy(localization)
@@ -157,6 +304,8 @@ def enrich_localization_with_topology(
     truth_center = [(truth_bounds[0][i] + truth_bounds[1][i]) / 2 for i in range(3)]
     diagonal = math.sqrt(sum((truth_bounds[1][i] - truth_bounds[0][i]) ** 2 for i in range(3)))
     graph = build_feature_graph(topology)
+    boolean_lineage = build_boolean_face_lineage(topology, parent_topology, operations)
+    lineage_by_node = {item["node_id"]: item for item in boolean_lineage["faces"]}
     aligned_faces = []
     for node in graph["nodes"]:
         if not node.get("bounds"):
@@ -185,6 +334,7 @@ def enrich_localization_with_topology(
             "aligned_bounds": item[3],
             "bbox_distance_normalized": round(item[0], 6),
             "bbox_overlap": round(-item[1], 6),
+            "boolean_lineage": deepcopy(lineage_by_node.get(item[2]["node_id"])),
         } for item in selected]
         region["candidate_topology_faces"] = matches
         region["topology_mapping_confidence"] = (
@@ -208,6 +358,9 @@ def enrich_localization_with_topology(
         "feature_candidate_count": len(graph["feature_candidates"]),
         "export_errors": topology.get("errors", []),
         "interpretation": "Face and operation links are ranked diagnostic evidence, not guaranteed feature-history recovery.",
+        "boolean_lineage": {
+            key: value for key, value in boolean_lineage.items() if key != "faces"
+        },
     }
     return result
 
@@ -241,10 +394,13 @@ def face_query_rows(localization: dict[str, Any], alignment: dict[str, Any]) -> 
 def apply_exact_face_queries(
     localization: dict[str, Any], query: dict[str, Any], topology: dict[str, Any],
     *, operations: list[dict[str, Any]] | None = None, diagonal: float,
+    parent_topology: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Promote AutoCAD trimmed-face distance results above bounding-box candidates."""
     result = deepcopy(localization)
     graph = build_feature_graph(topology)
+    boolean_lineage = build_boolean_face_lineage(topology, parent_topology, operations)
+    lineage_by_node = {item["node_id"]: item for item in boolean_lineage["faces"]}
     nodes = {(node["entity_handle"], node["face_id"]): node for node in graph["nodes"]}
     features_by_face: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for feature in graph["feature_candidates"]:
@@ -279,6 +435,7 @@ def apply_exact_face_queries(
                 "surface_type": node.get("surface_type", "unknown"),
                 "area": node.get("area"), "aligned_bounds": None,
                 "bbox_distance_normalized": None, "bbox_overlap": None,
+                "boolean_lineage": deepcopy(lineage_by_node.get(f"{key[0]}:{key[1]}")),
             })
             exact_matches.append({
                 **base,
@@ -316,6 +473,7 @@ def apply_exact_face_queries(
 def enrich_score_with_topology(
     score: dict[str, Any], topology: dict[str, Any], *,
     operations: list[dict[str, Any]] | None = None, query: dict[str, Any] | None = None,
+    parent_topology: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Enrich an already computed score without repeating mesh evaluation."""
     alignment = score["alignment"]
@@ -335,11 +493,13 @@ def enrich_score_with_topology(
         score["mismatch"]["localization"], topology,
         candidate_bounds=candidate_bounds, truth_bounds=truth_bounds,
         rotation=alignment["rotation"], operations=operations,
+        parent_topology=parent_topology,
     )
     if query is not None:
         diagonal = math.sqrt(sum(float(value) ** 2 for value in truth_extents))
         localization = apply_exact_face_queries(
             localization, query, topology, operations=operations, diagonal=diagonal,
+            parent_topology=parent_topology,
         )
     score["mismatch"]["localization"] = localization
     return score

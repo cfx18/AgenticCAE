@@ -38,7 +38,7 @@ from cad_evoloop.paths import project_root
 
 
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
-AGENT_CONDITION = "durable-kernel-checkpoint-v2"
+AGENT_CONDITION = "durable-kernel-boolean-lineage-v3"
 HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-checkpoint-v2"
 GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
@@ -76,10 +76,15 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
+        workspace / "src/cad_evoloop/backends/autocad/core_console.py",
+        workspace / "src/cad_evoloop/backends/autocad/audited.py",
         workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
+        workspace / "evals/geometry-benchmarks/prompts/modeling.md",
+        workspace / "evals/geometry-benchmarks/prompts/repair.md",
+        workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
         workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
     ])
     return {
@@ -188,6 +193,11 @@ def build_agent_campaign_manifest(
                 "protocol": "geometry-attempt-checkpoint-v1",
                 "stages": ["action_running", "action_completed", "verifier_completed"],
                 "preserve_interrupted_traces": True,
+            },
+            "boolean_face_lineage": {
+                "protocol": "evocad-boolean-face-lineage-v1",
+                "capture": "native_topology_before_and_after_each_core_job",
+                "operation_metadata_is_non_restrictive": True,
             },
         },
         "runtime_environment": runtime_environment,
