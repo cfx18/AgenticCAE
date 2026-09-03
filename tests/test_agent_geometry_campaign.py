@@ -53,6 +53,7 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
         workspace / "mcp/autocad-topology/EvoCadTopology.cs",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
@@ -75,13 +76,19 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
     campaign_manifest = result["campaign_manifest"]
     assert campaign_manifest["selection"]["sample_ids"] == ["sample:1"]
     assert campaign_manifest["model"]["name"] == "gpt-5.6-sol"
-    assert campaign_manifest["agent_condition"] == "durable-kernel-compat-v1"
+    assert campaign_manifest["agent_condition"] == "durable-kernel-checkpoint-v2"
+    assert campaign_manifest["execution"]["attempt_recovery"] == {
+        "protocol": "geometry-attempt-checkpoint-v1",
+        "stages": ["action_running", "action_completed", "verifier_completed"],
+        "preserve_interrupted_traces": True,
+    }
     assert "python" in campaign_manifest["runtime_environment"]
     assert set(campaign_manifest["runtime_environment"]["packages"]) == {
         "cadquery-ocp", "numpy", "scipy", "trimesh",
     }
     assert {
         "src/cad_evoloop/evaluation/geometry_features.py",
+        "src/cad_evoloop/evaluation/detached_campaign.py",
         "src/cad_evoloop/backends/autocad/topology.py",
         "mcp/autocad-topology/EvoCadTopology.cs",
     } <= set(campaign_manifest["agent_source_hashes"])
@@ -171,6 +178,7 @@ def test_feedback_only_campaign_schedules_actionable_reviewed_samples(
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
+        workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / ".agents/skills/autocad-image-modeling/SKILL.md",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
@@ -226,7 +234,7 @@ def test_feedback_only_campaign_schedules_actionable_reviewed_samples(
         "feedback_route": "agent_repair",
     }]
     campaign_manifest = result["campaign_manifest"]
-    assert campaign_manifest["agent_condition"] == "durable-kernel-human-feedback-v1"
+    assert campaign_manifest["agent_condition"] == "durable-kernel-human-feedback-checkpoint-v2"
     assert campaign_manifest["selection"]["source_sample_count"] == 2
     assert campaign_manifest["selection"]["sample_count"] == 1
     assert campaign_manifest["human_feedback"]["feedback_only"] is True

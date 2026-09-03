@@ -92,11 +92,15 @@ Primary links are recorded in `docs/AGENT_ARCHITECTURE_RESEARCH.md`.
 
 ## Current Boundary
 
-`durable-kernel-compat-v1` wraps the existing feedback-bound geometry loop as
-one contract-bound work unit. It validates provider isolation, project recovery,
-artifact lineage, contract gating, and campaign reproducibility. It does not yet
-claim a better geometry policy because planning and diagnosis remain inside the
-legacy v2 loop.
+`durable-kernel-checkpoint-v2` wraps the feedback-bound geometry loop as one
+contract-bound work unit and adds process-independent execution plus inner-loop
+stage recovery. A workspace-local detached runner owns the batch process. Each
+geometry job atomically records `action_running`, `action_completed`, and
+`verifier_completed`; recovery reuses the same attempt and Codex thread while
+preserving interrupted action and decision traces. This validates provider
+isolation, project recovery, artifact lineage, contract gating, and campaign
+reproducibility. It does not yet claim a better geometry policy because planning
+and diagnosis remain inside the geometry loop.
 
 The next behavioral condition will move one attempt, verification, diagnosis,
 and replan decision into separate durable work units while preserving the same

@@ -38,8 +38,8 @@ from cad_evoloop.paths import project_root
 
 
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
-AGENT_CONDITION = "durable-kernel-compat-v1"
-HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-v1"
+AGENT_CONDITION = "durable-kernel-checkpoint-v2"
+HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-checkpoint-v2"
 GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
 
@@ -73,6 +73,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
+        workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
         workspace / "mcp/autocad-topology/EvoCadTopology.cs",
@@ -183,6 +184,11 @@ def build_agent_campaign_manifest(
             "voxel_resolution": voxel_resolution,
             "project_isolation": "one-project-per-sample",
             "decision_transport_retry_limit": DECISION_RETRY_LIMIT,
+            "attempt_recovery": {
+                "protocol": "geometry-attempt-checkpoint-v1",
+                "stages": ["action_running", "action_completed", "verifier_completed"],
+                "preserve_interrupted_traces": True,
+            },
         },
         "runtime_environment": runtime_environment,
         "agent_source_hashes": _agent_source_hashes(workspace),

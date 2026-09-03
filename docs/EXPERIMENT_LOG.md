@@ -322,3 +322,22 @@ Artifacts:
 - backfill manifest: `01e6963a11057492d9534874ec16cce3ea75fa4a1e740e2b1409061dc7863351`;
 - analysis inputs bind the backfill summary SHA-256
   `0a37a209a83c32cbdb19b7323f0319a3af7335649088eb91b5e9b9745a9dc9d3`.
+
+## 2026-09-03: Process-Independent Campaign Recovery
+
+The Agent condition advanced from `durable-kernel-compat-v1` to
+`durable-kernel-checkpoint-v2`. The new condition adds a detached workspace-local
+runner and `geometry-attempt-checkpoint-v1` without changing AutoCAD geometric
+operation freedom or verifier thresholds.
+
+An injected interruption test killed the feedback decision after action and
+verification. Recovery retained one ledger attempt, did not rerun geometry or
+scoring, reused the Codex thread, preserved `decision-turns/t01`, and completed
+through `decision-turns/t02`. Separate state boundaries retain completed action
+work when verification is interrupted and archive partial action traces before
+an in-attempt action retry.
+
+Campaign `agent-geometry-30-sol-native-feedback-v2` remains interrupted evidence
+under its original source binding. It must not be resumed with the new code. The
+replacement 30-sample campaign uses a new identifier and freezes the checkpoint
+condition before execution.

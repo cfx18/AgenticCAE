@@ -261,6 +261,93 @@ def test_codex_process_transports_long_prompt_through_stdin(tmp_path, monkeypatc
     assert max(map(len, captured["command"])) < 100
 
 
+def test_interrupted_decision_resumes_same_attempt_without_rerunning_geometry(
+    tmp_path, monkeypatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = _manifest(workspace / ".local/data")
+    monkeypatch.setattr(geometry_campaign, "project_root", lambda: workspace)
+    monkeypatch.setattr(geometry_campaign, "_source_paths", lambda _workspace: [])
+    monkeypatch.setattr(geometry_campaign, "_prompt", lambda *args, **kwargs: "action")
+    monkeypatch.setattr(geometry_campaign, "_decision_prompt", lambda *args, **kwargs: "decision")
+    calls = {"action": 0, "decision": 0, "score": 0}
+
+    def initial_command(_exe, _model, _effort, job_dir, _images, _prompt, _audit, final_path):
+        return ["action", str(job_dir / f"candidate.{final_path.parent.name}.dwg")]
+
+    def resume_command(
+        _exe, _model, _effort, job_dir, _thread, _prompt, final_path,
+        *, with_autocad, **_kwargs,
+    ):
+        return (
+            ["action", str(job_dir / f"candidate.{final_path.parent.name}.dwg")]
+            if with_autocad else ["decision", str(final_path)]
+        )
+
+    def run_process(command, *, events_path, stderr_path, **_kwargs):
+        events_path.write_text(
+            json.dumps({"type": "thread.started", "thread_id": "thread-recover"}) + "\n",
+            encoding="utf-8",
+        )
+        stderr_path.write_text("", encoding="utf-8")
+        if command[0] == "action":
+            calls["action"] += 1
+            Path(command[1]).write_bytes(b"dwg")
+            return 0, False
+        calls["decision"] += 1
+        if calls["decision"] == 1:
+            raise KeyboardInterrupt("injected host interruption")
+        Path(command[1]).write_text(json.dumps({
+            "schema_version": "1.0", "failure_owner": "drawing",
+            "observed_failures": ["Mismatch remains"],
+            "root_causes": ["Feature is incomplete"],
+            "structure_assessment": "No further useful repair is available.",
+            "can_improve": False, "decision": "stop",
+            "decision_reason": "Stop after recovered feedback delivery.",
+            "planned_geometry_changes": [], "system_change_proposal": None,
+            "expected_score_gain": None, "confidence": 0.8,
+        }), encoding="utf-8")
+        return 0, False
+
+    def export_candidate(_candidate, output, timeout=None):
+        Path(output).write_bytes(b"stl")
+        return Path(output)
+
+    def score(*_args, **_kwargs):
+        calls["score"] += 1
+        return _geometry_result(55.0)
+
+    monkeypatch.setattr(geometry_campaign, "codex_command", initial_command)
+    monkeypatch.setattr(geometry_campaign, "codex_resume_command", resume_command)
+    monkeypatch.setattr(geometry_campaign, "_run_codex_process", run_process)
+    monkeypatch.setattr(geometry_campaign, "export_dwg_core", export_candidate)
+    monkeypatch.setattr(geometry_campaign, "score_geometry_files", score)
+    kwargs = dict(
+        manifest_path=manifest, sample=_sample(), campaign="recovery-loop",
+        model="test-model", effort="medium", executable="codex", timeout=300,
+        max_iterations=3, stagnation_limit=2, job_time_budget=3600,
+        score_samples=100, voxel_resolution=16,
+    )
+
+    with pytest.raises(KeyboardInterrupt, match="injected"):
+        geometry_campaign.run_geometry_job(**kwargs)
+    result = geometry_campaign.run_geometry_job(**kwargs)
+
+    assert calls == {"action": 1, "decision": 2, "score": 1}
+    assert len(result["attempts"]) == 1
+    assert result["attempts"][0]["attempt_id"] == "a001"
+    assert result["attempts"][0]["resumed_from_phase"] == "verifier_completed"
+    job = Path(result["job_dir"])
+    assert (job / "attempts/a001/decision-turns/t01/events.jsonl").is_file()
+    assert (job / "attempts/a001/decision-turns/t02/reflection.json").is_file()
+    recovery = json.loads((job / "recovery-state.json").read_text(encoding="utf-8"))
+    assert recovery["status"] == "completed"
+    assert recovery["interruption_count"] == 1
+    ledger = json.loads((Path(result["ledger_run"]) / "run.json").read_text(encoding="utf-8"))
+    assert [attempt["attempt_id"] for attempt in ledger["attempts"]] == ["a001"]
+
+
 def test_stage_agent_inputs_excludes_ground_truth(tmp_path) -> None:
     manifest = _manifest(tmp_path)
     job = tmp_path / "job"

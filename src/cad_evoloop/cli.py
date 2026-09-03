@@ -307,6 +307,54 @@ def _batch_agent_geometry() -> None:
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def _start_agent_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Start a detached durable-agent geometry campaign")
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("selection", type=Path)
+    parser.add_argument("--campaign", required=True)
+    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--reasoning-effort", default="medium")
+    parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--max-iterations", type=int, default=12)
+    parser.add_argument("--stagnation-limit", type=int, default=2)
+    parser.add_argument("--job-time-budget", type=int, default=3600)
+    parser.add_argument("--score-samples", type=int, default=20000)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    parser.add_argument("--max-jobs", type=int)
+    parser.add_argument("--human-feedback", type=Path)
+    parser.add_argument("--feedback-only", action="store_true")
+    args = parser.parse_args()
+    command = [
+        sys.executable, "-m", "cad_evoloop.cli", "agent-geometry-batch",
+        str(args.manifest.resolve()), str(args.selection.resolve()),
+        "--campaign", args.campaign, "--model", args.model,
+        "--reasoning-effort", args.reasoning_effort,
+        "--timeout", str(args.timeout), "--max-iterations", str(args.max_iterations),
+        "--stagnation-limit", str(args.stagnation_limit),
+        "--job-time-budget", str(args.job_time_budget),
+        "--score-samples", str(args.score_samples),
+        "--voxel-resolution", str(args.voxel_resolution),
+    ]
+    if args.max_jobs is not None:
+        command.extend(("--max-jobs", str(args.max_jobs)))
+    if args.human_feedback:
+        command.extend(("--human-feedback", str(args.human_feedback.resolve())))
+    if args.feedback_only:
+        command.append("--feedback-only")
+    from cad_evoloop.evaluation.detached_campaign import start_detached_campaign
+
+    print(json.dumps(start_detached_campaign(args.campaign, command), indent=2, ensure_ascii=False))
+
+
+def _status_agent_geometry() -> None:
+    parser = argparse.ArgumentParser(description="Inspect a detached geometry campaign")
+    parser.add_argument("campaign")
+    args = parser.parse_args()
+    from cad_evoloop.evaluation.detached_campaign import campaign_runner_status
+
+    print(json.dumps(campaign_runner_status(args.campaign), indent=2, ensure_ascii=False))
+
+
 def _report_geometry() -> None:
     parser = argparse.ArgumentParser(description="Generate a geometry campaign report")
     parser.add_argument("campaign_dir", type=Path)
@@ -458,6 +506,8 @@ def main() -> None:
             _report_geometry_features, "report native face localization diagnostics",
         ),
         "agent-geometry-batch": (_batch_agent_geometry, "run geometry through the durable agent"),
+        "agent-geometry-start": (_start_agent_geometry, "start a detached durable geometry campaign"),
+        "agent-geometry-status": (_status_agent_geometry, "inspect a detached geometry campaign"),
         "geometry-report": (_report_geometry, "generate geometry campaign figures and tables"),
         "agent-geometry-report": (
             _report_agent_geometry, "materialize and report durable-agent geometry results",

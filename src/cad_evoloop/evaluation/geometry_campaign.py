@@ -11,11 +11,11 @@ from string import Template
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 from cad_evoloop.agent.models.codex_cli import build_codex_exec_command, parse_codex_events
 from cad_evoloop.ledger import RunLedger
-from cad_evoloop.ledger.ledger import redact, sha256_file
+from cad_evoloop.ledger.ledger import redact, sha256_file, write_json_atomic
 from cad_evoloop.paths import project_root
 from cad_evoloop.backends.autocad.topology import build_topology_plugin, export_topology_core
 from cad_evoloop.verification.export_core_console import export_dwg_core
@@ -580,8 +580,50 @@ def _run_decision_with_retries(
     turn_stderr_paths = []
     selected_output = None
     decision = None
+    turns_root = attempt_dir / "decision-turns"
+    existing_turns = sorted(
+        path for path in turns_root.glob("t[0-9][0-9]") if path.is_dir()
+    ) if turns_root.is_dir() else []
+    for turn_dir in existing_turns:
+        turn_number = int(turn_dir.name[1:])
+        output_path = turn_dir / "reflection.json"
+        turn_events = turn_dir / "events.jsonl"
+        turn_stderr = turn_dir / "stderr.log"
+        event_data = _read_codex_events(turn_events)
+        event_values.append(event_data)
+        turn_event_paths.append(turn_events)
+        turn_stderr_paths.append(turn_stderr)
+        value = None
+        error = "Interrupted before decision completed"
+        if output_path.is_file():
+            try:
+                value = json.loads(output_path.read_text(encoding="utf-8"))
+                _validate_agent_decision(value)
+                error = None
+            except Exception as exc:
+                error = repr(exc)
+        trace = {
+            "turn": turn_number,
+            "return_code": None,
+            "timed_out": False,
+            "valid": value is not None and error is None,
+            "error": error,
+            "usage": event_data.get("usage") or {},
+            "event_errors": event_data.get("errors") or [],
+            "artifact_dir": turn_dir.relative_to(attempt_dir).as_posix(),
+            "recovered_from_disk": True,
+        }
+        traces.append(trace)
+        if trace["valid"]:
+            decision = value
+            selected_output = output_path
+            break
 
-    for turn_number in range(1, retry_limit + 2):
+    start_turn = max((trace["turn"] for trace in traces), default=0) + 1
+    max_turn = max(retry_limit + 1, start_turn + retry_limit)
+    for turn_number in range(start_turn, max_turn + 1):
+        if decision is not None:
+            break
         remaining = job_time_budget - (time.perf_counter() - job_started)
         if remaining <= 1:
             traces.append({
@@ -598,9 +640,10 @@ def _run_decision_with_retries(
         turn_events = turn_dir / "events.jsonl"
         turn_stderr = turn_dir / "stderr.log"
         retry_note = ""
-        if turn_number > 1:
+        if traces:
             retry_note = (
-                "\n\nRUNTIME RETRY: The previous decision response was unavailable or invalid. "
+                "\n\nRUNTIME RECOVERY: A previous decision turn was interrupted, unavailable, "
+                "or invalid. "
                 "Re-evaluate the same feedback packet and return only a valid schema-conforming "
                 "decision. Do not perform CAD operations in this turn."
             )
@@ -681,7 +724,9 @@ def _run_decision_with_retries(
         "decision": decision,
         "return_code": traces[-1].get("return_code") if traces else None,
         "timed_out": any(trace.get("timed_out") for trace in traces),
-        "recovered": decision is not None and len(traces) > 1,
+        "recovered": decision is not None and (
+            len(traces) > 1 or bool(existing_turns)
+        ),
         "error": None if decision is not None else (traces[-1].get("error") if traces else None),
         "event_data": {
             "usage": _merge_usage(*(value.get("usage") or {} for value in event_values)),
@@ -698,6 +743,208 @@ def _run_decision_with_retries(
             for path in (attempt_dir / trace["artifact_dir"]).iterdir()
             if path.is_file()
         ],
+    }
+
+
+def _archive_interrupted_action(
+    attempt_dir: Path, candidate: Path | None = None,
+) -> Path | None:
+    names = (
+        "action-prompt.txt", "codex-events.jsonl", "codex-stderr.log",
+        "codex-final.txt", "mcp-audit.jsonl",
+    )
+    existing = [attempt_dir / name for name in names if (attempt_dir / name).is_file()]
+    if candidate is not None and candidate.is_file():
+        existing.append(candidate)
+    if not existing:
+        return None
+    root = attempt_dir / "action-interruptions"
+    number = max(
+        [int(path.name[1:]) for path in root.glob("i[0-9][0-9][0-9]") if path.is_dir()],
+        default=0,
+    ) + 1 if root.is_dir() else 1
+    destination = root / f"i{number:03d}"
+    destination.mkdir(parents=True)
+    for path in existing:
+        shutil.move(path, destination / path.name)
+    return destination
+
+
+def _execute_geometry_action_and_verifier(
+    *,
+    workspace: Path,
+    sample: dict[str, Any],
+    model: str,
+    effort: str,
+    executable: str,
+    timeout: int,
+    score_samples: int,
+    voxel_resolution: int,
+    job_dir: Path,
+    run_dir: Path,
+    ledger: RunLedger,
+    attempt_id: str,
+    attempt_dir: Path,
+    number: int,
+    run_id: str,
+    images: list[Path],
+    staged_human_feedback: Path | None,
+    ground_truth: Path,
+    prompt_root: Path,
+    previous_candidate: Path | None,
+    previous_verdict: Path | None,
+    latest_candidate: Path | None,
+    latest_verdict: Path | None,
+    previous_reflection: Path | None,
+    thread_id: str | None,
+    job_started: float,
+    job_time_budget: int,
+    recovering_action: bool,
+    resumed_action: dict[str, Any] | None,
+    action_checkpoint: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    candidate = job_dir / f"candidate.{attempt_id}.dwg"
+    candidate_stl = attempt_dir / "candidate.stl"
+    candidate_topology = attempt_dir / "candidate-topology.json"
+    face_query_input = attempt_dir / "face-query.tsv"
+    face_query_output = attempt_dir / "face-query.json"
+    verdict_path = attempt_dir / "geometry-verdict.json"
+    events_path = attempt_dir / "codex-events.jsonl"
+    stderr_path = attempt_dir / "codex-stderr.log"
+    final_path = attempt_dir / "codex-final.txt"
+    action_prompt_path = attempt_dir / "action-prompt.txt"
+    audit_path = attempt_dir / "mcp-audit.jsonl"
+    if resumed_action is not None:
+        action_event_data = _read_codex_events(events_path)
+        thread_id = resumed_action.get("thread_id") or thread_id or action_event_data.get("thread_id")
+        return_code = resumed_action.get("return_code")
+        action_timed_out = bool(resumed_action.get("action_timed_out"))
+    else:
+        if recovering_action:
+            _archive_interrupted_action(attempt_dir, candidate)
+        prompt = _prompt(
+            prompt_root / (
+                "modeling.md"
+                if number == 1 or (previous_candidate is None and latest_candidate is None)
+                else "repair.md"
+            ),
+            sample_id=sample["sample_id"], run_id=run_id, attempt_id=attempt_id,
+            candidate=candidate, previous_candidate=previous_candidate or latest_candidate,
+            verdict=previous_verdict, latest_verdict=latest_verdict,
+            reflection=previous_reflection, human_feedback=staged_human_feedback,
+        )
+        command = (
+            codex_command(
+                executable, model, effort, job_dir, images, prompt, audit_path, final_path,
+            )
+            if thread_id is None else
+            codex_resume_command(
+                executable, model, effort, job_dir, thread_id, prompt,
+                final_path, with_autocad=True, audit_path=audit_path,
+            )
+        )
+        action_prompt_path.write_text(prompt, encoding="utf-8", newline="\n")
+        decision_turn_timeout = min(180, max(30, timeout // 4))
+        feedback_reserve = decision_turn_timeout * (DECISION_RETRY_LIMIT + 1)
+        attempt_timeout = remaining_attempt_timeout(
+            timeout, job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
+        )
+        return_code, action_timed_out = _run_codex_process(
+            command, cwd=job_dir, events_path=events_path, stderr_path=stderr_path,
+            timeout=attempt_timeout, stdin_text=prompt,
+        )
+        action_event_data = _read_codex_events(events_path)
+        thread_id = thread_id or action_event_data.get("thread_id")
+        for path, role in (
+            (action_prompt_path, "codex-prompt"), (events_path, "codex-events"),
+            (stderr_path, "codex-stderr"), (final_path, "codex-final"),
+            (audit_path, "mcp-audit"),
+        ):
+            if path.is_file():
+                ledger.add_artifact(run_dir, attempt_id, path, role=role)
+        ledger.ingest_mcp_audit(run_dir, audit_path)
+        action_checkpoint({
+            "phase": "action_completed", "thread_id": thread_id,
+            "return_code": return_code, "action_timed_out": action_timed_out,
+        })
+
+    if not candidate.is_file():
+        verdict = failed_geometry_verdict(
+            sample["sample_id"], "Codex agent did not create the requested candidate DWG",
+            "agent-output-missing",
+        )
+    else:
+        ledger.add_artifact(run_dir, attempt_id, candidate, role="candidate")
+        try:
+            export_dwg_core(candidate, candidate_stl, timeout=min(timeout, 180))
+            ledger.add_artifact(run_dir, attempt_id, candidate_stl, role="candidate-mesh")
+            raw_score = score_geometry_files(
+                candidate_stl, ground_truth, sample_count=score_samples,
+                voxel_resolution=voxel_resolution,
+            )
+            topology_error = None
+            topology_executable = Path(os.environ.get(
+                "AUTOCAD_CORE_CONSOLE", r"E:\AutoCAD\AutoCAD 2024\accoreconsole.exe",
+            ))
+            topology_managed_dir = Path(os.environ.get(
+                "AUTOCAD_MANAGED_DIR", str(topology_executable.parent),
+            ))
+            if topology_executable.is_file():
+                try:
+                    plugin_override = os.environ.get("AUTOCAD_TOPOLOGY_PLUGIN")
+                    plugin = (
+                        Path(plugin_override).resolve() if plugin_override else
+                        build_topology_plugin(workspace, managed_dir=topology_managed_dir)
+                    )
+                    query_rows = face_query_rows(
+                        raw_score["mismatch"]["localization"], raw_score["alignment"],
+                    )
+                    if query_rows:
+                        face_query_input.write_text("".join(
+                            f"{query_id}\t{x:.17g}\t{y:.17g}\t{z:.17g}\n"
+                            for query_id, (x, y, z) in query_rows
+                        ), encoding="utf-8", newline="\n")
+                    export_topology_core(
+                        workspace, candidate, candidate_topology,
+                        executable=topology_executable, plugin=plugin,
+                        timeout=min(timeout, 180),
+                        query_input_path=face_query_input if query_rows else None,
+                        query_output_path=face_query_output if query_rows else None,
+                        query_source_center=raw_score["alignment"]["candidate_center"],
+                    )
+                    ledger.add_artifact(
+                        run_dir, attempt_id, candidate_topology, role="candidate-topology",
+                    )
+                    if face_query_output.is_file():
+                        ledger.add_artifact(
+                            run_dir, attempt_id, face_query_output, role="candidate-face-query",
+                        )
+                    raw_score = enrich_score_with_topology(
+                        raw_score, load_topology(candidate_topology),
+                        operations=_operation_manifest_from_audit(audit_path),
+                        query=(json.loads(face_query_output.read_text(encoding="utf-8"))
+                               if face_query_output.is_file() else None),
+                    )
+                except Exception as exc:
+                    topology_error = repr(exc)
+            verdict = geometry_verdict(raw_score, sample["sample_id"])
+            if topology_error:
+                verdict["native_topology_diagnostic"] = {
+                    "status": "unavailable", "error": topology_error,
+                }
+        except Exception as exc:
+            verdict = failed_geometry_verdict(
+                sample["sample_id"], repr(exc), "geometry-verifier-error",
+            )
+    verdict_path.write_text(
+        json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+    return {
+        "thread_id": thread_id,
+        "return_code": return_code,
+        "action_timed_out": action_timed_out,
+        "action_event_data": action_event_data,
+        "verdict": verdict,
     }
 
 
@@ -725,66 +972,117 @@ def run_geometry_job(
     base_job_dir = campaign_dir / sample_slug / slug(model)
     if base_job_dir.exists() and (base_job_dir / "result.json").is_file():
         return json.loads((base_job_dir / "result.json").read_text(encoding="utf-8"))
+    recovery_path = base_job_dir / "recovery-state.json"
+    recovery = (
+        json.loads(recovery_path.read_text(encoding="utf-8"))
+        if recovery_path.is_file() else None
+    )
+    if recovery and any(
+        recovery.get(key) != value for key, value in {
+            "campaign": campaign, "sample_id": sample["sample_id"], "model": model,
+        }.items()
+    ):
+        raise ValueError("Geometry recovery state does not match this job")
     job_dir = base_job_dir
     retry_number = 0
-    while job_dir.exists():
+    while job_dir.exists() and recovery is None:
         retry_number += 1
         job_dir = base_job_dir.with_name(f"{base_job_dir.name}.retry-{retry_number:03d}")
     job_dir.mkdir(parents=True, exist_ok=True)
-    images = stage_agent_inputs(manifest_path, sample, job_dir)
-    staged_human_feedback = stage_human_feedback(
-        human_feedback, sample["sample_id"], job_dir,
-    )
+    if recovery is None:
+        images = stage_agent_inputs(manifest_path, sample, job_dir)
+        staged_human_feedback = stage_human_feedback(
+            human_feedback, sample["sample_id"], job_dir,
+        )
+    else:
+        images = sorted((job_dir / "input_files").glob("input-*"))
+        staged_human_feedback = (
+            job_dir / "human-feedback.json"
+            if (job_dir / "human-feedback.json").is_file() else None
+        )
     ground_truth = _safe_manifest_path(manifest_path.parent, sample["ground_truth_step"])
     retry_suffix = f"-retry-{retry_number:03d}" if retry_number else ""
-    run_id = f"{campaign}-{slug(model)}-{effort}{retry_suffix}"
+    run_id = (
+        recovery["run_id"] if recovery else
+        f"{campaign}-{slug(model)}-{effort}{retry_suffix}"
+    )
     ledger = RunLedger(eval_root)
     ledger_sample_id = sample_slug
     ledger_sample_dir = eval_root / "samples" / ledger_sample_id
     ledger_sample_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(job_dir / "task.json", ledger_sample_dir / "task_desc.json")
-    run_dir = ledger.start(
-        ledger_sample_id,
-        run_id=run_id,
-        agent={
-            "system": "codex-cli",
-            "agent_id": "evocad-geometry-batch",
-            "model": model,
-            "reasoning_effort": effort,
-            "external_sample_id": sample["sample_id"],
-        },
-        source_paths=_source_paths(workspace),
-        input_paths=[
-            job_dir / "task.json", *images,
-            *([staged_human_feedback] if staged_human_feedback else []),
-            *([split_path] if split_path else []),
-        ],
-    )
-    prompt_root = eval_root / "prompts"
-    attempts = []
-    best_score = -1.0
-    best_attempt_id = None
-    best_candidate = None
-    best_verdict = None
-    previous_candidate = None
-    previous_verdict = None
-    latest_verdict = None
-    latest_candidate = None
-    previous_reflection = None
-    thread_id = None
-    stop_reason = None
-    non_improving_attempts = 0
-    job_started = time.perf_counter()
-
-    for number in range(1, max_iterations + 1):
-        attempt_id = ledger.add_attempt(
-            run_dir,
-            label="fresh-modeling" if number == 1 else "geometry-guided-repair",
-            summary=(
-                "Reconstruct native 3D geometry from the visible drawing"
-                if number == 1 else "Repair the best candidate from structured geometry feedback"
-            ),
+    if recovery is None:
+        shutil.copy2(job_dir / "task.json", ledger_sample_dir / "task_desc.json")
+        run_dir = ledger.start(
+            ledger_sample_id,
+            run_id=run_id,
+            agent={
+                "system": "codex-cli",
+                "agent_id": "evocad-geometry-batch",
+                "model": model,
+                "reasoning_effort": effort,
+                "external_sample_id": sample["sample_id"],
+            },
+            source_paths=_source_paths(workspace),
+            input_paths=[
+                job_dir / "task.json", *images,
+                *([staged_human_feedback] if staged_human_feedback else []),
+                *([split_path] if split_path else []),
+            ],
         )
+        recovery = {
+            "schema_version": "1.0", "campaign": campaign,
+            "sample_id": sample["sample_id"], "model": model, "run_id": run_id,
+            "run_dir": str(run_dir), "completed_attempts": [],
+            "active_attempt": None, "interruption_count": 0,
+        }
+        write_json_atomic(job_dir / "recovery-state.json", recovery)
+    else:
+        run_dir = Path(recovery["run_dir"])
+        if not (run_dir / "run.json").is_file():
+            raise FileNotFoundError(f"Recovery ledger is unavailable: {run_dir}")
+        recovery["interruption_count"] = int(recovery.get("interruption_count", 0)) + 1
+        write_json_atomic(job_dir / "recovery-state.json", recovery)
+    prompt_root = eval_root / "prompts"
+    attempts = list(recovery.get("completed_attempts", []))
+    runtime = recovery.get("runtime", {})
+    best_score = float(runtime.get("best_score", -1.0))
+    best_attempt_id = runtime.get("best_attempt_id")
+    best_candidate = Path(runtime["best_candidate"]) if runtime.get("best_candidate") else None
+    best_verdict = Path(runtime["best_verdict"]) if runtime.get("best_verdict") else None
+    previous_candidate = best_candidate
+    previous_verdict = best_verdict
+    latest_verdict = Path(runtime["latest_verdict"]) if runtime.get("latest_verdict") else None
+    latest_candidate = Path(runtime["latest_candidate"]) if runtime.get("latest_candidate") else None
+    previous_reflection = (
+        Path(runtime["previous_reflection"]) if runtime.get("previous_reflection") else None
+    )
+    thread_id = runtime.get("thread_id")
+    stop_reason = None
+    non_improving_attempts = int(runtime.get("non_improving_attempts", 0))
+    job_started = time.perf_counter()
+    result = json.loads((run_dir / "run.json").read_text(encoding="utf-8")).get("result") or {
+        "status": "failed",
+    }
+
+    active_attempt = recovery.get("active_attempt")
+    first_number = int(active_attempt["number"]) if active_attempt else len(attempts) + 1
+    for number in range(first_number, max_iterations + 1):
+        if active_attempt and int(active_attempt["number"]) == number:
+            attempt_id = active_attempt["attempt_id"]
+        else:
+            attempt_id = ledger.add_attempt(
+                run_dir,
+                label="fresh-modeling" if number == 1 else "geometry-guided-repair",
+                summary=(
+                    "Reconstruct native 3D geometry from the visible drawing"
+                    if number == 1 else "Repair the best candidate from structured geometry feedback"
+                ),
+            )
+            active_attempt = {
+                "attempt_id": attempt_id, "number": number, "phase": "action_running",
+            }
+            recovery["active_attempt"] = active_attempt
+            write_json_atomic(job_dir / "recovery-state.json", recovery)
         attempt_dir = job_dir / "attempts" / attempt_id
         attempt_dir.mkdir(parents=True, exist_ok=True)
         candidate = job_dir / f"candidate.{attempt_id}.dwg"
@@ -802,158 +1100,96 @@ def run_geometry_job(
         audit_path = attempt_dir / "mcp-audit.jsonl"
         reflection_events_path = attempt_dir / "reflection-events.jsonl"
         reflection_stderr_path = attempt_dir / "reflection-stderr.log"
-        prompt = _prompt(
-            prompt_root / (
-                "modeling.md"
-                if number == 1 or (previous_candidate is None and latest_candidate is None)
-                else "repair.md"
-            ),
-            sample_id=sample["sample_id"],
-            run_id=run_id,
-            attempt_id=attempt_id,
-            candidate=candidate,
-            previous_candidate=previous_candidate or latest_candidate,
-            verdict=previous_verdict,
-            latest_verdict=latest_verdict,
-            reflection=previous_reflection,
-            human_feedback=staged_human_feedback,
-        )
-        if thread_id is None:
-            command = codex_command(
-                executable, model, effort, job_dir, images, prompt, audit_path, final_path,
-            )
-        else:
-            command = codex_resume_command(
-                executable, model, effort, job_dir, thread_id, prompt,
-                final_path, with_autocad=True, audit_path=audit_path,
-            )
-        action_prompt_path.write_text(prompt, encoding="utf-8", newline="\n")
         decision_turn_timeout = min(180, max(30, timeout // 4))
-        feedback_reserve = decision_turn_timeout * (DECISION_RETRY_LIMIT + 1)
-        attempt_timeout = remaining_attempt_timeout(
-            timeout,
-            job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
-        )
         started = time.perf_counter()
-        return_code, action_timed_out = _run_codex_process(
-            command,
-            cwd=job_dir,
-            events_path=events_path,
-            stderr_path=stderr_path,
-            timeout=attempt_timeout,
-            stdin_text=prompt,
-        )
-        action_event_data = _read_codex_events(events_path)
-        thread_id = thread_id or action_event_data.get("thread_id")
-        for path, role in (
-            (action_prompt_path, "codex-prompt"),
-            (events_path, "codex-events"),
-            (stderr_path, "codex-stderr"),
-            (final_path, "codex-final"),
-            (audit_path, "mcp-audit"),
-        ):
-            if path.is_file():
-                ledger.add_artifact(run_dir, attempt_id, path, role=role)
-        ledger.ingest_mcp_audit(run_dir, audit_path)
-
-        if not candidate.is_file():
-            verdict = failed_geometry_verdict(
-                sample["sample_id"],
-                "Codex agent did not create the requested candidate DWG",
-                "agent-output-missing",
-            )
+        resume_phase = active_attempt.get("phase")
+        resumed_verifier = resume_phase == "verifier_completed"
+        if resumed_verifier:
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+            action_event_data = _read_codex_events(events_path)
+            thread_id = active_attempt.get("thread_id") or thread_id or action_event_data.get("thread_id")
+            return_code = active_attempt.get("return_code")
+            action_timed_out = bool(active_attempt.get("action_timed_out"))
         else:
-            ledger.add_artifact(run_dir, attempt_id, candidate, role="candidate")
-            try:
-                export_dwg_core(candidate, candidate_stl, timeout=min(timeout, 180))
-                ledger.add_artifact(run_dir, attempt_id, candidate_stl, role="candidate-mesh")
-                raw_score = score_geometry_files(
-                    candidate_stl,
-                    ground_truth,
-                    sample_count=score_samples,
-                    voxel_resolution=voxel_resolution,
-                )
-                topology_error = None
-                topology_executable = Path(os.environ.get(
-                    "AUTOCAD_CORE_CONSOLE", r"E:\AutoCAD\AutoCAD 2024\accoreconsole.exe",
-                ))
-                topology_managed_dir = Path(os.environ.get(
-                    "AUTOCAD_MANAGED_DIR", str(topology_executable.parent),
-                ))
-                if topology_executable.is_file():
-                    try:
-                        topology_plugin_override = os.environ.get("AUTOCAD_TOPOLOGY_PLUGIN")
-                        topology_plugin = (
-                            Path(topology_plugin_override).resolve()
-                            if topology_plugin_override
-                            else build_topology_plugin(
-                                workspace, managed_dir=topology_managed_dir,
-                            )
-                        )
-                        query_rows = face_query_rows(
-                            raw_score["mismatch"]["localization"], raw_score["alignment"],
-                        )
-                        if query_rows:
-                            face_query_input.write_text("".join(
-                                f"{query_id}\t{x:.17g}\t{y:.17g}\t{z:.17g}\n"
-                                for query_id, (x, y, z) in query_rows
-                            ), encoding="utf-8", newline="\n")
-                        export_topology_core(
-                            workspace, candidate, candidate_topology,
-                            executable=topology_executable, plugin=topology_plugin,
-                            timeout=min(timeout, 180),
-                            query_input_path=face_query_input if query_rows else None,
-                            query_output_path=face_query_output if query_rows else None,
-                            query_source_center=raw_score["alignment"]["candidate_center"],
-                        )
-                        ledger.add_artifact(
-                            run_dir, attempt_id, candidate_topology, role="candidate-topology",
-                        )
-                        if face_query_output.is_file():
-                            ledger.add_artifact(
-                                run_dir, attempt_id, face_query_output, role="candidate-face-query",
-                            )
-                        raw_score = enrich_score_with_topology(
-                            raw_score,
-                            load_topology(candidate_topology),
-                            operations=_operation_manifest_from_audit(audit_path),
-                            query=(
-                                json.loads(face_query_output.read_text(encoding="utf-8"))
-                                if face_query_output.is_file() else None
-                            ),
-                        )
-                    except Exception as exc:
-                        topology_error = repr(exc)
-                verdict = geometry_verdict(raw_score, sample["sample_id"])
-                if topology_error:
-                    verdict["native_topology_diagnostic"] = {
-                        "status": "unavailable", "error": topology_error,
-                    }
-            except Exception as exc:
-                verdict = failed_geometry_verdict(
-                    sample["sample_id"], repr(exc), "geometry-verifier-error",
-                )
-        verdict_path.write_text(
-            json.dumps(verdict, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
-        )
+            def persist_action_checkpoint(value: dict[str, Any]) -> None:
+                active_attempt.update(value)
+                recovery["active_attempt"] = active_attempt
+                recovery["runtime"] = {
+                    "best_score": best_score, "best_attempt_id": best_attempt_id,
+                    "best_candidate": str(best_candidate) if best_candidate else None,
+                    "best_verdict": str(best_verdict) if best_verdict else None,
+                    "latest_candidate": str(latest_candidate) if latest_candidate else None,
+                    "latest_verdict": str(latest_verdict) if latest_verdict else None,
+                    "previous_reflection": (
+                        str(previous_reflection) if previous_reflection else None
+                    ),
+                    "thread_id": value.get("thread_id") or thread_id,
+                    "non_improving_attempts": non_improving_attempts,
+                }
+                write_json_atomic(job_dir / "recovery-state.json", recovery)
+
+            action = _execute_geometry_action_and_verifier(
+                workspace=workspace, sample=sample,
+                model=model, effort=effort, executable=executable, timeout=timeout,
+                score_samples=score_samples, voxel_resolution=voxel_resolution,
+                job_dir=job_dir, run_dir=run_dir, ledger=ledger,
+                attempt_id=attempt_id, attempt_dir=attempt_dir, number=number,
+                run_id=run_id, images=images,
+                staged_human_feedback=staged_human_feedback, ground_truth=ground_truth,
+                prompt_root=prompt_root, previous_candidate=previous_candidate,
+                previous_verdict=previous_verdict, latest_candidate=latest_candidate,
+                latest_verdict=latest_verdict, previous_reflection=previous_reflection,
+                thread_id=thread_id, job_started=job_started,
+                job_time_budget=job_time_budget,
+                recovering_action=active_attempt.get("phase") == "action_running",
+                resumed_action=(
+                    active_attempt if active_attempt.get("phase") == "action_completed" else None
+                ),
+                action_checkpoint=persist_action_checkpoint,
+            )
+            verdict = action["verdict"]
+            action_event_data = action["action_event_data"]
+            thread_id = action["thread_id"]
+            return_code = action["return_code"]
+            action_timed_out = action["action_timed_out"]
         score = float(verdict["score"])
         scorable = candidate_stl.is_file() and float(verdict.get("coverage", 0)) > 0
-        improved = scorable and score > best_score
-        if improved:
-            best_score = score
-            best_attempt_id = attempt_id
-            best_candidate = candidate
-            best_verdict = verdict_path
-            shutil.copy2(candidate, job_dir / "candidate.dwg")
-            shutil.copy2(candidate_stl, job_dir / "candidate.stl")
-            if candidate_topology.is_file():
-                shutil.copy2(candidate_topology, job_dir / "candidate-topology.json")
-            if face_query_output.is_file():
-                shutil.copy2(face_query_output, job_dir / "face-query.json")
-            shutil.copy2(verdict_path, job_dir / "geometry-verdict.json")
-            non_improving_attempts = 0
-        else:
-            non_improving_attempts += 1
+        if not resumed_verifier:
+            improved = scorable and score > best_score
+            if improved:
+                best_score = score
+                best_attempt_id = attempt_id
+                best_candidate = candidate
+                best_verdict = verdict_path
+                shutil.copy2(candidate, job_dir / "candidate.dwg")
+                shutil.copy2(candidate_stl, job_dir / "candidate.stl")
+                if candidate_topology.is_file():
+                    shutil.copy2(candidate_topology, job_dir / "candidate-topology.json")
+                if face_query_output.is_file():
+                    shutil.copy2(face_query_output, job_dir / "face-query.json")
+                shutil.copy2(verdict_path, job_dir / "geometry-verdict.json")
+                non_improving_attempts = 0
+            else:
+                non_improving_attempts += 1
+        active_attempt.update({
+            "phase": "verifier_completed", "thread_id": thread_id,
+            "return_code": return_code, "action_timed_out": action_timed_out,
+            "score": score,
+        })
+        recovery["active_attempt"] = active_attempt
+        recovery["runtime"] = {
+            "best_score": best_score, "best_attempt_id": best_attempt_id,
+            "best_candidate": str(best_candidate) if best_candidate else None,
+            "best_verdict": str(best_verdict) if best_verdict else None,
+            "latest_candidate": str(candidate) if candidate.is_file() else (
+                str(latest_candidate) if latest_candidate else None
+            ),
+            "latest_verdict": str(verdict_path),
+            "previous_reflection": str(previous_reflection) if previous_reflection else None,
+            "thread_id": thread_id,
+            "non_improving_attempts": non_improving_attempts,
+        }
+        write_json_atomic(job_dir / "recovery-state.json", recovery)
 
         decision = None
         decision_error = None
@@ -1056,6 +1292,7 @@ def run_geometry_job(
         attempt = {
             "attempt_id": attempt_id,
             "attempt_number": number,
+            "resumed_from_phase": resume_phase if resumed_verifier else None,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             "return_code": return_code,
             "timed_out": action_timed_out or (decision is None and decision_timed_out),
@@ -1092,6 +1329,20 @@ def run_geometry_job(
         latest_verdict = verdict_path
         latest_candidate = candidate if candidate.is_file() else latest_candidate
         previous_reflection = reflection_path if reflection_path.is_file() else previous_reflection
+        recovery["completed_attempts"] = attempts
+        recovery["active_attempt"] = None
+        recovery["runtime"] = {
+            "best_score": best_score, "best_attempt_id": best_attempt_id,
+            "best_candidate": str(best_candidate) if best_candidate else None,
+            "best_verdict": str(best_verdict) if best_verdict else None,
+            "latest_candidate": str(latest_candidate) if latest_candidate else None,
+            "latest_verdict": str(latest_verdict) if latest_verdict else None,
+            "previous_reflection": str(previous_reflection) if previous_reflection else None,
+            "thread_id": thread_id,
+            "non_improving_attempts": non_improving_attempts,
+        }
+        write_json_atomic(job_dir / "recovery-state.json", recovery)
+        active_attempt = None
         if safety_reason:
             stop_reason = safety_reason
             break
@@ -1128,6 +1379,9 @@ def run_geometry_job(
     (job_dir / "result.json").write_text(
         json.dumps(final, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
     )
+    recovery["status"] = "completed"
+    recovery["result"] = str(job_dir / "result.json")
+    write_json_atomic(job_dir / "recovery-state.json", recovery)
     return final
 
 
