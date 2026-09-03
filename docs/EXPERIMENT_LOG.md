@@ -374,3 +374,29 @@ editing. The subtractive check retained four unchanged box faces and attributed
 the two modified end faces plus the new cylindrical wall to a single centered
 through-hole operation. Detailed protocol and limits are recorded in
 `docs/BOOLEAN_FACE_LINEAGE.md`.
+
+### Lineage pilot V1 and corrective versioning
+
+The targeted two-sample campaign `agent-geometry-lineage-pilot-sol-v1` completed
+without runtime or safety censoring:
+
+- `omnimech:4`: selected `99.82` at a004 versus native-feedback V3 `99.77`;
+- `ortho2cad:00186338`: selected `99.85` at a005 versus V3 `99.15`;
+- both runs stopped autonomously without strict passage.
+
+The Agent emitted parameter-bearing staged operations and began isolating
+repair hypotheses. Inspection also found that the first lineage implementation
+compared only the final Core job. It correctly labeled 102 inherited and 3
+changed faces in `omnimech:4/a001`, but did not propagate the origin of inherited
+tooth faces from earlier jobs. A separate reasoning defect appeared after an
+`ortho2cad` regression: the reflection requested the best checkpoint but called
+the regressed parameter set successful and proposed replaying it.
+
+The corrected condition is `durable-kernel-boolean-lineage-v4` with protocol
+`evocad-boolean-face-lineage-v2`. It propagates face origins through the captured
+input/output job graph, excludes validation-only operations from geometric
+causality, and adds an adjudication rule against replaying a regressed parameter
+set without new contradictory evidence. Offline replay of the unchanged V1
+artifacts linked all major tooth mismatch regions only to
+`op03_tooth_spaces/tooth_pattern`; keyway and radial-hole regions linked to their
+own operations, and `op07_final_validation` disappeared from candidates.

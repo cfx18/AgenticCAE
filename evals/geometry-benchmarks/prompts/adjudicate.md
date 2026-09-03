@@ -27,4 +27,6 @@ Decide whether another evidence-grounded geometry iteration is worthwhile. Inspe
 
 Return `continue` only when you can name concrete, reference-consistent changes or a concrete recovery action with a plausible score gain. Return `stop` when strict passage is achieved, the visible input is genuinely insufficient, the blocker is not recoverable through another CAD turn, or no defensible structural improvement remains. `max_iterations` is enforced outside this decision and must not be treated as your reasoning limit.
 
+When the latest attempt scores materially below the best checkpoint, treat its changed parameter set as negative evidence. A continuation plan must separate reverted changes from a genuinely new hypothesis. Do not call a regressed change successful or reapply the same parameter values unless new drawing, metric, or lineage evidence specifically contradicts the observed regression.
+
 Your response must match the supplied JSON schema. `planned_geometry_changes` becomes the plan for the next modeling turn. Keep failure attribution factual; use `none` after a valid strict pass. When evidence points to a shared prompt, skill, MCP, verifier, harness, or task defect, record a concise `system_change_proposal`; the fixed evaluation runner will version and evaluate that proposal separately rather than mutating the shared system inside this sample.

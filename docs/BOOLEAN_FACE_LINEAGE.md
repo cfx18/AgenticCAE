@@ -13,7 +13,7 @@ The protocol does not restrict AutoLISP, AutoCAD commands, construction order,
 or geometry type. It observes topology before and after an unrestricted Core
 Console job.
 
-Protocol identifier: `evocad-boolean-face-lineage-v1`.
+Protocol identifier: `evocad-boolean-face-lineage-v2`.
 
 ## Capture
 
@@ -43,6 +43,12 @@ An exact unique fingerprint match is high-confidence inheritance. A face with
 no stable parent fingerprint is classified as `created_or_modified`. Parent
 faces not retained after the operation are classified collectively as
 `deleted_or_modified`.
+
+Version 2 propagates the originating operation through every captured job in a
+branched attempt. It keys each stage by its input and output DWG paths, carries
+stable face fingerprints along that path, and assigns a changed face to the
+geometry-changing operations in the stage where its fingerprint first appears.
+Validation-only operations are excluded from geometric causality.
 
 This intentionally does not claim that geometrically similar faces are the same
 topological face.
@@ -109,5 +115,5 @@ Two isolated AutoCAD 2024 Core Console checks passed on 2026-09-03:
 
 The completed `agent-geometry-30-sol-native-feedback-v3` campaign remains bound
 to `durable-kernel-checkpoint-v2`. Boolean lineage begins a new condition,
-`durable-kernel-boolean-lineage-v3`. Results from the two conditions must not be
+`durable-kernel-boolean-lineage-v4`. Results from the two conditions must not be
 pooled without reporting the intervention.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from cad_evoloop.evaluation.geometry_features import (
     apply_exact_face_queries,
     build_boolean_face_lineage,
@@ -66,6 +68,54 @@ def test_boolean_lineage_marks_multi_operation_job_as_ambiguous() -> None:
     assert lineage["operation_graph"]["edges"] == [{
         "source": "op-base", "target": "op-hole", "relation": "declared_parent",
     }]
+
+
+def test_boolean_lineage_propagates_face_origins_across_captured_jobs(tmp_path) -> None:
+    empty = {"schema_version": "1.0", "entities": [], "errors": []}
+    base = sample_topology()
+    base["entities"][0]["faces"] = base["entities"][0]["faces"][:1]
+    paths = {
+        name: tmp_path / f"{name}.json"
+        for name in ("empty", "base-before", "base-after", "hole-before", "hole-after")
+    }
+    values = {
+        "empty": empty, "base-before": empty, "base-after": base,
+        "hole-before": base, "hole-after": sample_topology(),
+    }
+    for name, path in paths.items():
+        path.write_text(json.dumps(values[name]), encoding="utf-8")
+    stage1 = tmp_path / "stage1.dwg"
+    candidate = tmp_path / "candidate.dwg"
+    operations = [
+        {
+            "operation_id": "op-base", "intent": "base", "operation_type": "primitive",
+            "mcp_job_id": "job-1", "input_path": str(tmp_path / "blank.dwg"),
+            "output_path": str(stage1), "topology_before_path": str(paths["base-before"]),
+            "topology_after_path": str(paths["base-after"]),
+        },
+        {
+            "operation_id": "op-hole", "intent": "hole", "operation_type": "subtract",
+            "mcp_job_id": "job-2", "input_path": str(stage1), "output_path": str(candidate),
+            "topology_before_path": str(paths["hole-before"]),
+            "topology_after_path": str(paths["hole-after"]),
+        },
+        {
+            "operation_id": "op-check", "intent": "validate", "operation_type": "validation",
+            "mcp_job_id": "job-2", "input_path": str(stage1), "output_path": str(candidate),
+            "topology_before_path": str(paths["hole-before"]),
+            "topology_after_path": str(paths["hole-after"]),
+        },
+    ]
+
+    lineage = build_boolean_face_lineage(sample_topology(), base, operations)
+
+    by_face = {item["face_id"]: item for item in lineage["faces"]}
+    assert by_face["f1"]["status"] == "inherited"
+    assert by_face["f1"]["candidate_operation_ids"] == ["op-base"]
+    assert by_face["f2"]["status"] == "created_or_modified"
+    assert by_face["f2"]["candidate_operation_ids"] == ["op-hole"]
+    assert lineage["snapshot_comparison"]["captured_job_count"] == 2
+    assert lineage["snapshot_comparison"]["lineage_mode"] == "multi_job_fingerprint_chain"
 
 
 def test_localization_maps_region_to_face_feature_and_declared_operation() -> None:

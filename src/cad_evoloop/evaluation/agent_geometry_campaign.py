@@ -38,7 +38,7 @@ from cad_evoloop.paths import project_root
 
 
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
-AGENT_CONDITION = "durable-kernel-boolean-lineage-v3"
+AGENT_CONDITION = "durable-kernel-boolean-lineage-v4"
 HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-checkpoint-v2"
 GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
@@ -195,7 +195,7 @@ def build_agent_campaign_manifest(
                 "preserve_interrupted_traces": True,
             },
             "boolean_face_lineage": {
-                "protocol": "evocad-boolean-face-lineage-v1",
+                "protocol": "evocad-boolean-face-lineage-v2",
                 "capture": "native_topology_before_and_after_each_core_job",
                 "operation_metadata_is_non_restrictive": True,
             },

@@ -76,9 +76,9 @@ def test_frozen_agent_campaign_dry_run_binds_samples_model_and_sources(
     campaign_manifest = result["campaign_manifest"]
     assert campaign_manifest["selection"]["sample_ids"] == ["sample:1"]
     assert campaign_manifest["model"]["name"] == "gpt-5.6-sol"
-    assert campaign_manifest["agent_condition"] == "durable-kernel-boolean-lineage-v3"
+    assert campaign_manifest["agent_condition"] == "durable-kernel-boolean-lineage-v4"
     assert campaign_manifest["execution"]["boolean_face_lineage"] == {
-        "protocol": "evocad-boolean-face-lineage-v1",
+        "protocol": "evocad-boolean-face-lineage-v2",
         "capture": "native_topology_before_and_after_each_core_job",
         "operation_metadata_is_non_restrictive": True,
     }

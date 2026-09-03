@@ -11,7 +11,7 @@ from typing import Any, Iterable
 
 
 FEATURE_PROTOCOL_ID = "evocad-native-feature-localization-v1"
-BOOLEAN_LINEAGE_PROTOCOL_ID = "evocad-boolean-face-lineage-v1"
+BOOLEAN_LINEAGE_PROTOCOL_ID = "evocad-boolean-face-lineage-v2"
 
 
 def _vector(value: Iterable[float]) -> tuple[float, float, float]:
@@ -137,6 +137,95 @@ def _topology_faces(topology: dict[str, Any] | None) -> list[dict[str, Any]]:
     return records
 
 
+def _topology_signature(topology: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(sorted(
+        str(face.get("face_fingerprint") or "") for face in _topology_faces(topology)
+    ))
+
+
+def _captured_history_face_lineage(
+    topology: dict[str, Any], operations: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]] | None, int]:
+    """Propagate face origins through every captured Core Console job and branch."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for operation in operations:
+        job_id = operation.get("mcp_job_id")
+        before_path = operation.get("topology_before_path")
+        after_path = operation.get("topology_after_path")
+        if job_id and before_path and after_path:
+            groups.setdefault(str(job_id), []).append(operation)
+
+    states_by_output: dict[str, dict[str, dict[str, Any]]] = {}
+    matching_state: dict[str, dict[str, Any]] | None = None
+    captured = 0
+    final_signature = _topology_signature(topology)
+    for group in groups.values():
+        before_path = Path(str(group[0]["topology_before_path"]))
+        after_path = Path(str(group[0]["topology_after_path"]))
+        if not before_path.is_file() or not after_path.is_file():
+            continue
+        try:
+            before = json.loads(before_path.read_text(encoding="utf-8"))
+            after = json.loads(after_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        captured += 1
+        input_key = str(Path(str(group[0].get("input_path", ""))).resolve())
+        output_key = str(Path(str(group[0].get("output_path", ""))).resolve())
+        parent_state = states_by_output.get(input_key, {})
+        before_fingerprints = {
+            str(face.get("face_fingerprint") or "") for face in _topology_faces(before)
+        }
+        geometry_operations = [
+            operation for operation in group
+            if str(operation.get("operation_type", "")).casefold()
+            not in {"validation", "verification", "inspection"}
+        ] or group
+        operation_ids = [str(operation["operation_id"]) for operation in geometry_operations]
+        state = {}
+        for face in _topology_faces(after):
+            fingerprint = str(face.get("face_fingerprint") or "")
+            prior = parent_state.get(fingerprint)
+            if fingerprint in before_fingerprints:
+                candidate_operations = list((prior or {}).get("candidate_operation_ids", []))
+                evidence = list(dict.fromkeys([
+                    *((prior or {}).get("evidence", [])), "stable_face_fingerprint_chain",
+                ]))
+                confidence = str((prior or {}).get("confidence", "high"))
+                status = "inherited"
+            else:
+                candidate_operations = operation_ids
+                evidence = ["topology_snapshot_delta", "captured_mcp_job"]
+                confidence = "medium" if len(operation_ids) == 1 else "low"
+                status = "created_or_modified"
+            state[fingerprint] = {
+                **face,
+                "status": status,
+                "parent_face_candidates": [],
+                "candidate_operation_ids": candidate_operations,
+                "evidence": evidence,
+                "confidence": confidence,
+                "origin_mcp_job_id": (
+                    (prior or {}).get("origin_mcp_job_id")
+                    if status == "inherited" else group[0].get("mcp_job_id")
+                ),
+            }
+        states_by_output[output_key] = state
+        if _topology_signature(after) == final_signature:
+            matching_state = state
+
+    if matching_state is None:
+        return None, captured
+    result = []
+    for face in _topology_faces(topology):
+        fingerprint = str(face.get("face_fingerprint") or "")
+        lineage = matching_state.get(fingerprint)
+        if lineage is None:
+            return None, captured
+        result.append({**lineage, **face})
+    return result, captured
+
+
 def build_boolean_face_lineage(
     topology: dict[str, Any],
     parent_topology: dict[str, Any] | None,
@@ -215,6 +304,12 @@ def build_boolean_face_lineage(
             "confidence": confidence,
         })
 
+    history_lineage, captured_job_count = _captured_history_face_lineage(
+        topology, operations,
+    )
+    if history_lineage is not None:
+        face_lineage = history_lineage
+
     deleted_parent_faces = [
         face for face in parent_faces
         if str(face.get("face_fingerprint") or "") not in inherited_fingerprints
@@ -233,6 +328,11 @@ def build_boolean_face_lineage(
             "inherited_face_count": inherited_count,
             "created_or_modified_face_count": len(face_lineage) - inherited_count,
             "deleted_or_modified_parent_face_count": len(deleted_parent_faces),
+            "captured_job_count": captured_job_count,
+            "lineage_mode": (
+                "multi_job_fingerprint_chain" if history_lineage is not None
+                else "single_snapshot_delta"
+            ),
         },
         "operation_graph": {"nodes": operation_nodes, "edges": operation_edges},
         "faces": face_lineage,
@@ -261,11 +361,18 @@ def _operation_candidates(
     for operation in operations:
         operation_id = str(operation.get("operation_id"))
         evidence = []
-        if handles & {str(item) for item in operation.get("entity_handles", [])}:
+        if not lineage_evidence and handles & {
+            str(item) for item in operation.get("entity_handles", [])
+        }:
             evidence.append("entity_handle")
         if fingerprints & {str(item) for item in operation.get("face_fingerprints", [])}:
             evidence.append("face_fingerprint")
-        if feature_ids & {str(item) for item in operation.get("feature_ids", [])}:
+        declared_feature_ids = {
+            str(item) for item in operation.get("feature_ids", [])
+        }
+        if operation.get("feature_id"):
+            declared_feature_ids.add(str(operation["feature_id"]))
+        if feature_ids & declared_feature_ids:
             evidence.append("feature_id")
         if operation_id in lineage_evidence:
             evidence.extend(["boolean_face_lineage", *lineage_evidence[operation_id]])
