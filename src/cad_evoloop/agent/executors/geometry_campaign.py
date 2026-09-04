@@ -27,6 +27,7 @@ class GeometryCampaignExecutorConfig:
     score_samples: int = 20000
     voxel_resolution: int = 64
     split_path: Path | None = None
+    reconstruction_mode: str = "baseline"
 
 
 class GeometryCampaignExecutor:
@@ -93,6 +94,7 @@ class GeometryCampaignExecutor:
             split_path=self.config.split_path,
             human_feedback=human_feedback,
             oracle_context=oracle_context,
+            reconstruction_mode=self.config.reconstruction_mode,
         )
         job_dir = Path(result["job_dir"])
         parent_ids = tuple(dict.fromkeys([
@@ -108,6 +110,9 @@ class GeometryCampaignExecutor:
             (job_dir / "face-query.json", "cad_face_query", "candidate-face-query"),
             (job_dir / "geometry-verdict.json", "verifier_report", "verdict"),
             (job_dir / "result.json", "trajectory_result", "result"),
+            (job_dir / "ir-builder/reconstruction-ir.json", "reconstruction_ir", "reconstruction-ir"),
+            (job_dir / "ir-builder/ir-validation.json", "ir_validation", "ir-validation"),
+            (job_dir / "ir-builder/ir-build-record.json", "ir_build_record", "ir-build-record"),
         ]
         for path, kind, label in files:
             if not path.is_file():
@@ -123,6 +128,7 @@ class GeometryCampaignExecutor:
                     "sample_id": sample_id,
                     "campaign": self.config.campaign,
                     "model": self.config.model,
+                    "reconstruction_mode": self.config.reconstruction_mode,
                     "selected_attempt_id": result.get("selected_attempt_id"),
                 },
             )

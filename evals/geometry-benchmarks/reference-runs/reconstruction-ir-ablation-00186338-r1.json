@@ -1,0 +1,156 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-reconstruction-ir-ablation-result-v1",
+  "date": "2026-09-04",
+  "implementation_base_commit": "dac308b",
+  "sample_id": "ortho2cad:00186338",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "controls": {
+    "surface_samples": 20000,
+    "voxel_resolution": 64,
+    "ir_condition_max_iterations_safety": 12,
+    "ir_condition_job_time_budget_seconds": 3600,
+    "agent_loop_protocol": "evocad-agent-loop-v3",
+    "verifier_protocol": "evocad-geometry-v2"
+  },
+  "conditions": {
+    "historical_baseline": {
+      "campaign": "agent-geometry-lineage-pilot-sol-v2-recovery1",
+      "result_sha256": "48f0d4cc22b99e4bd01f31b9c0f25acc62ba759d94bfbb2f7d0e0c6799349b12",
+      "image_visibility": "cad_agent",
+      "first_score": 41.85,
+      "selected_score": 99.25,
+      "selected_attempt_id": "a013",
+      "strict_pass": false,
+      "attempts": 14,
+      "elapsed_seconds": 3593.278,
+      "stop_reason": "max_iterations",
+      "selected_metrics": {
+        "voxel_iou": 0.968739,
+        "normalized_chamfer": 0.003517,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000515,
+        "candidate_watertight": true
+      },
+      "trajectory_scores": [
+        41.85, 73.14, 76.87, 94.25, 78.06, 98.52, 98.63,
+        91.09, 98.82, 98.91, 98.91, 84.97, 99.25, 99.03
+      ],
+      "control_note": "Historical diagnostic only: this run used a 14-iteration, 4200-second safety budget and predates the IR implementation."
+    },
+    "forced_ir": {
+      "campaign": "agent-ir-forced-00186338-sol-r1",
+      "result_sha256": "3ed8458812fce3a2f3e80bad83a38e4194a25895fea303c674e27f77ec517057",
+      "candidate_sha256": "07dff6481108ae9d902e656824e46be0aaaf7da83f4a0a251c9936db67926d6c",
+      "ir_file_sha256": "6e3f300d19651ff42ce96f58163493a2ccb2184cc242b847bc71fcf2651d9df8",
+      "image_visibility": "same_builder_thread_context",
+      "first_score": 35.86,
+      "selected_score": 98.95,
+      "selected_attempt_id": "a010",
+      "strict_pass": false,
+      "attempts": 12,
+      "elapsed_seconds": 2883.024,
+      "stop_reason": "max_iterations",
+      "agent_requested_continue": true,
+      "selected_metrics": {
+        "voxel_iou": 0.960214,
+        "normalized_chamfer": 0.003991,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.001258,
+        "candidate_watertight": true
+      },
+      "ir_diagnostics": {
+        "dimensions": {"observed": 3, "inferred": 4, "assumed": 0, "unknown": 2},
+        "features": 6,
+        "feature_confidence_mean": 0.75,
+        "ambiguities": 7,
+        "global_confidence": 0.69
+      },
+      "trajectory_scores": [
+        35.86, 75.12, 97.55, 93.79, 98.58, 75.27,
+        98.71, 98.29, 98.77, 98.95, 98.11, 89.65
+      ]
+    },
+    "specialist_ir": {
+      "campaign": "agent-ir-specialist-00186338-sol-r1",
+      "result_sha256": "17f8108f96bcbe621657509da25213348380f860f6887b5a392e4144c2faa5b9",
+      "candidate_sha256": "a72b9d5f8b9ce217fcf8d2c38a3e0d0bc3c102118a17babd5416ac4b6c40ef04",
+      "ir_file_sha256": "3f9582c3aa8bf77ea9ce34650e04d9d76c651b6cf01566ccd39539d852c092bf",
+      "image_visibility": "ir_builder_only",
+      "first_score": 38.8,
+      "selected_score": 99.95,
+      "selected_attempt_id": "a007",
+      "strict_pass": false,
+      "attempts": 7,
+      "elapsed_seconds": 1427.674,
+      "stop_reason": "agent_stop",
+      "agent_requested_continue": false,
+      "selected_metrics": {
+        "voxel_iou": 0.988461,
+        "normalized_chamfer": 0.003073,
+        "bbox_relative_error": 0.000034,
+        "volume_relative_error": 0.003323,
+        "candidate_watertight": true
+      },
+      "ir_diagnostics": {
+        "dimensions": {"observed": 3, "inferred": 4, "assumed": 0, "unknown": 1},
+        "features": 5,
+        "feature_confidence_mean": 0.688,
+        "ambiguities": 7,
+        "global_confidence": 0.65
+      },
+      "trajectory_scores": [38.8, 73.95, 99.79, 94.91, 99.91, 99.91, 99.95],
+      "final_stop_reason": "No localized mismatch remained above the verifier threshold, and unresolved IR ambiguities made another edit unguided tuning."
+    },
+    "oracle_ir": {
+      "campaign": "agent-ir-oracle-00186338-sol-r1",
+      "result_sha256": "b9d4fe015adcc17362fa46ed2e9c9a82a9cca443af4036fae7355cf8a3e47a10",
+      "candidate_sha256": "6f1a2c5130dfc328175a196d3f03fa6cb0ed5138437c771fc3f42866c86fca1c",
+      "ir_file_sha256": "31771358e9eef5bd258e446d8c75af5b93f8b5dfe33be17434a852f9f60a9e99",
+      "image_visibility": "none",
+      "first_score": 100.0,
+      "selected_score": 100.0,
+      "selected_attempt_id": "a001",
+      "strict_pass": true,
+      "attempts": 1,
+      "elapsed_seconds": 397.768,
+      "stop_reason": "strict_pass",
+      "agent_requested_continue": false,
+      "selected_metrics": {
+        "voxel_iou": 0.999108,
+        "normalized_chamfer": 0.002938,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000006,
+        "candidate_watertight": true
+      },
+      "ir_diagnostics": {
+        "features": 4,
+        "feature_confidence_mean": 1.0,
+        "ambiguities": 0,
+        "global_confidence": 1.0
+      },
+      "trajectory_scores": [100.0],
+      "execution_note": "The first Core Console call failed, the same action received the backend error, corrected the job, and still passed without another geometry iteration."
+    }
+  },
+  "diagnostic_findings": [
+    "Forcing the same thread to write an IR did not improve this sample over the historical baseline.",
+    "An image-specialist thread followed by an image-free CAD thread reached 99.95 in seven attempts and stopped by evidence, not by the safety cap.",
+    "The specialist IR still contained an incorrect broad curved-body hypothesis; verifier feedback compensated for much of that error but could not cross strict IoU 0.99.",
+    "The exact unordered oracle IR passed in one geometry attempt, so the downstream planner, AutoCAD translation, MCP, and verifier can solve this sample when perception parameters are correct.",
+    "This is a single-sample integration diagnostic, not a causal estimate. The historical baseline is not a fully matched control."
+  ],
+  "next_preregistered_control": {
+    "requirement": "Run paired baseline, forced_ir, specialist_ir, and oracle_ir conditions from one frozen source revision with identical safety budgets.",
+    "minimum_replicates_per_sample": 3,
+    "primary_endpoint": "strict_pass_rate",
+    "secondary_endpoints": [
+      "attempts_to_first_acceptable",
+      "attempts_to_best",
+      "selected_voxel_iou",
+      "wall_time_seconds",
+      "IR observed/inferred/unknown dimension counts"
+    ]
+  }
+}

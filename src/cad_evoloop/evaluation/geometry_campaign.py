@@ -13,7 +13,12 @@ import sys
 import time
 from typing import Any, Callable
 
-from cad_evoloop.agent.models.codex_cli import build_codex_exec_command, parse_codex_events
+from cad_evoloop.agent.models.codex_cli import (
+    CodexCLIConfig,
+    CodexCLIProvider,
+    build_codex_exec_command,
+    parse_codex_events,
+)
 from cad_evoloop.ledger import RunLedger
 from cad_evoloop.ledger.ledger import redact, sha256_file, write_json_atomic
 from cad_evoloop.paths import project_root
@@ -27,6 +32,13 @@ from .geometry_score import (
     score_geometry_files,
 )
 from .geometry_features import enrich_score_with_topology, face_query_rows, load_topology
+from .reconstruction_ir import (
+    IR_MODES,
+    IR_PROTOCOL,
+    build_reconstruction_ir,
+    oracle_packet_to_reconstruction_ir,
+    summarize_reconstruction_ir,
+)
 
 
 DEFAULT_MODEL = "gpt-5.6-sol"
@@ -137,6 +149,68 @@ def stage_oracle_context(
     return destination
 
 
+def _bind_reconstruction_ir_to_task(
+    job_dir: Path, ir_path: Path, mode: str, ir_sha256: str,
+) -> None:
+    task_path = job_dir / "task.json"
+    task = json.loads(task_path.read_text(encoding="utf-8"))
+    task["reconstruction_ir"] = {
+        "path": ir_path.relative_to(job_dir).as_posix(),
+        "mode": mode,
+        "protocol": IR_PROTOCOL,
+        "sha256": ir_sha256,
+    }
+    task_path.write_text(
+        json.dumps(task, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+
+
+def _stage_ir_executor_workspace(job_dir: Path, ir_path: Path, mode: str) -> Path:
+    """Create an image-free working directory for isolated CAD execution conditions."""
+    destination = job_dir / "cad-executor-workspace"
+    destination.mkdir(exist_ok=True)
+    task = json.loads((job_dir / "task.json").read_text(encoding="utf-8"))
+    task["input_images"] = []
+    task["evidence_policy"] = "reconstruction_ir_only"
+    task["reconstruction_ir"]["path"] = "reconstruction-ir.json"
+    (destination / "task.json").write_text(
+        json.dumps(task, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+    shutil.copy2(ir_path, destination / "reconstruction-ir.json")
+    return destination
+
+
+def _ir_prompt_block(ir_path: Path, mode: str) -> str:
+    policies = {
+        "forced_ir": (
+            "You are the same Agent thread that produced this validated IR from the attached "
+            "images. Use the IR as the mandatory explicit reconstruction state. You may consult "
+            "images already present in this conversation only to resolve an ambiguity recorded "
+            "in the IR; do not bypass or silently replace the IR."
+        ),
+        "specialist_ir": (
+            "An independent specialist produced this validated IR. Original images are not "
+            "available to this CAD execution thread. Treat the IR as the sole geometric evidence."
+        ),
+        "oracle_ir": (
+            "This evaluation-only IR contains an unordered exact GT-derived feature inventory. "
+            "Original images are not available to this CAD execution thread. Treat the IR as the "
+            "sole geometric evidence, infer the construction order yourself, and never pool this "
+            "condition with normal accuracy."
+        ),
+    }
+    value = json.loads(ir_path.read_text(encoding="utf-8"))
+    return (
+        "\n\nRECONSTRUCTION IR GATE: PASSED\n"
+        f"Condition: {mode}\nEvidence policy: {policies[mode]}\n"
+        "The operation names and geometry payload are descriptive evidence, not a command "
+        "whitelist or restriction on AutoCAD operations.\n"
+        "BEGIN RECONSTRUCTION IR JSON\n"
+        f"{json.dumps(value, indent=2, ensure_ascii=False)}\n"
+        "END RECONSTRUCTION IR JSON"
+    )
+
+
 def geometry_verdict(result: dict[str, Any], sample_id: str) -> dict[str, Any]:
     checks = result["checks"]
     metrics = result["metrics"]
@@ -226,16 +300,21 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/evaluation/gt_trajectory.py",
+        workspace / "src/cad_evoloop/evaluation/reconstruction_ir.py",
         workspace / "src/cad_evoloop/evaluation/geometry_score.py",
         workspace / "src/cad_evoloop/evaluation/geometry_split.py",
         workspace / "src/cad_evoloop/verification/export_core_console.py",
         workspace / "evals/geometry-benchmarks/prompts/modeling.md",
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
         workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
+        workspace / "evals/geometry-benchmarks/prompts/modeling-ir.md",
+        workspace / "evals/geometry-benchmarks/prompts/repair-ir.md",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
         workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
         workspace / "evals/geometry-benchmarks/gt-attribution-v1.json",
+        workspace / "evals/geometry-benchmarks/ir-ablation-v1.json",
         workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json",
+        workspace / "src/cad_evoloop/evaluation/schemas/reconstruction-ir.schema.json",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
     ]
 
@@ -253,6 +332,8 @@ def _prompt(
     reflection: Path | None = None,
     human_feedback: Path | None = None,
     oracle_context: Path | None = None,
+    reconstruction_ir: Path | None = None,
+    reconstruction_mode: str = "baseline",
 ) -> str:
     skill_path = project_root() / ".agents/skills/autocad-image-modeling/SKILL.md"
     prompt = Template(template_path.read_text(encoding="utf-8")).substitute(
@@ -297,6 +378,8 @@ def _prompt(
             f"{embedded_oracle}\n"
             "END ORACLE CONTEXT JSON"
         )
+    if reconstruction_ir is not None:
+        prompt += _ir_prompt_block(reconstruction_ir, reconstruction_mode)
     return prompt
 
 
@@ -415,6 +498,20 @@ def _merge_usage(*values: dict[str, Any]) -> dict[str, int]:
         "output_tokens", "reasoning_output_tokens",
     }
     return {key: sum(int(value.get(key, 0) or 0) for value in values) for key in keys}
+
+
+def _record_ledger_artifact_once(
+    ledger: RunLedger, run_dir: Path, attempt_id: str, path: Path, role: str,
+) -> None:
+    manifest = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    attempt = next(item for item in manifest["attempts"] if item["attempt_id"] == attempt_id)
+    resolved = path.resolve().as_posix()
+    if any(
+        row.get("role") == role and row.get("source_path") == resolved
+        for row in attempt.get("artifacts", [])
+    ):
+        return
+    ledger.add_artifact(run_dir, attempt_id, path, role=role)
 
 
 def _decision_prompt(
@@ -851,6 +948,9 @@ def _execute_geometry_action_and_verifier(
     number: int,
     run_id: str,
     images: list[Path],
+    agent_cwd: Path,
+    reconstruction_ir: Path | None,
+    reconstruction_mode: str,
     staged_human_feedback: Path | None,
     staged_oracle_context: Path | None,
     ground_truth: Path,
@@ -888,7 +988,9 @@ def _execute_geometry_action_and_verifier(
             _archive_interrupted_action(attempt_dir, candidate)
         prompt = _prompt(
             prompt_root / (
-                "modeling.md"
+                "modeling-ir.md" if reconstruction_ir is not None and (
+                    number == 1 or (previous_candidate is None and latest_candidate is None)
+                ) else "repair-ir.md" if reconstruction_ir is not None else "modeling.md"
                 if number == 1 or (previous_candidate is None and latest_candidate is None)
                 else "repair.md"
             ),
@@ -897,14 +999,16 @@ def _execute_geometry_action_and_verifier(
             verdict=previous_verdict, latest_verdict=latest_verdict,
             reflection=previous_reflection, human_feedback=staged_human_feedback,
             oracle_context=staged_oracle_context,
+            reconstruction_ir=reconstruction_ir,
+            reconstruction_mode=reconstruction_mode,
         )
         command = (
             codex_command(
-                executable, model, effort, job_dir, images, prompt, audit_path, final_path,
+                executable, model, effort, agent_cwd, images, prompt, audit_path, final_path,
             )
             if thread_id is None else
             codex_resume_command(
-                executable, model, effort, job_dir, thread_id, prompt,
+                executable, model, effort, agent_cwd, thread_id, prompt,
                 final_path, with_autocad=True, audit_path=audit_path,
             )
         )
@@ -915,7 +1019,7 @@ def _execute_geometry_action_and_verifier(
             timeout, job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
         )
         return_code, action_timed_out = _run_codex_process(
-            command, cwd=job_dir, events_path=events_path, stderr_path=stderr_path,
+            command, cwd=agent_cwd, events_path=events_path, stderr_path=stderr_path,
             timeout=attempt_timeout, stdin_text=prompt,
         )
         action_event_data = _read_codex_events(events_path)
@@ -1032,7 +1136,14 @@ def run_geometry_job(
     split_path: Path | None = None,
     human_feedback: Path | None = None,
     oracle_context: Path | None = None,
+    reconstruction_mode: str = "baseline",
 ) -> dict[str, Any]:
+    if reconstruction_mode not in IR_MODES:
+        raise ValueError(f"Unsupported reconstruction mode: {reconstruction_mode}")
+    if reconstruction_mode == "oracle_ir" and oracle_context is None:
+        raise ValueError("oracle_ir requires a perception oracle context")
+    if reconstruction_mode in {"forced_ir", "specialist_ir"} and oracle_context is not None:
+        raise ValueError(f"{reconstruction_mode} cannot be combined with evaluator oracle context")
     workspace = project_root()
     eval_root = workspace / "evals/geometry-benchmarks"
     campaign_dir = eval_root / "batch" / campaign
@@ -1046,8 +1157,10 @@ def run_geometry_job(
         if recovery_path.is_file() else None
     )
     if recovery and any(
-        recovery.get(key) != value for key, value in {
+        recovery.get(key, "baseline" if key == "reconstruction_mode" else None) != value
+        for key, value in {
             "campaign": campaign, "sample_id": sample["sample_id"], "model": model,
+            "reconstruction_mode": reconstruction_mode,
         }.items()
     ):
         raise ValueError("Geometry recovery state does not match this job")
@@ -1110,6 +1223,7 @@ def run_geometry_job(
             "sample_id": sample["sample_id"], "model": model, "run_id": run_id,
             "run_dir": str(run_dir), "completed_attempts": [],
             "active_attempt": None, "interruption_count": 0,
+            "reconstruction_mode": reconstruction_mode,
         }
         write_json_atomic(job_dir / "recovery-state.json", recovery)
     else:
@@ -1118,6 +1232,80 @@ def run_geometry_job(
             raise FileNotFoundError(f"Recovery ledger is unavailable: {run_dir}")
         recovery["interruption_count"] = int(recovery.get("interruption_count", 0)) + 1
         write_json_atomic(job_dir / "recovery-state.json", recovery)
+
+    ir_dir = job_dir / "ir-builder"
+    reconstruction_ir_path: Path | None = None
+    ir_artifact_paths: list[Path] = []
+    builder_thread_id: str | None = None
+    if reconstruction_mode != "baseline":
+        reconstruction_ir_path = ir_dir / "reconstruction-ir.json"
+        build_record_path = ir_dir / "ir-build-record.json"
+        validation_path = ir_dir / "ir-validation.json"
+        if reconstruction_ir_path.is_file() and build_record_path.is_file():
+            ir_value = json.loads(reconstruction_ir_path.read_text(encoding="utf-8"))
+            build_record = json.loads(build_record_path.read_text(encoding="utf-8"))
+            builder_thread_id = build_record.get("conversation_id")
+            ir_artifact_paths = [
+                path for path in (reconstruction_ir_path, validation_path, build_record_path)
+                if path.is_file()
+            ]
+        elif reconstruction_mode == "oracle_ir":
+            if staged_oracle_context is None:
+                raise ValueError("oracle_ir recovery is missing its staged perception oracle")
+            packet = json.loads(staged_oracle_context.read_text(encoding="utf-8"))
+            ir_value = oracle_packet_to_reconstruction_ir(packet)
+            ir_dir.mkdir(parents=True, exist_ok=True)
+            reconstruction_ir_path.write_text(
+                json.dumps(ir_value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+            )
+            validation_path.write_text(json.dumps({
+                "schema_version": "1.0", "protocol": IR_PROTOCOL,
+                "sample_id": sample["sample_id"], "status": "passed", "errors": [],
+                "ir_sha256": ir_value["ir_sha256"],
+                "diagnostics": summarize_reconstruction_ir(ir_value),
+            }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            build_record_path.write_text(json.dumps({
+                "schema_version": "1.0", "protocol": IR_PROTOCOL,
+                "sample_id": sample["sample_id"], "status": "passed",
+                "provider": "evaluator-oracle", "conversation_id": None,
+                "attempt_count": 0, "ir_sha256": ir_value["ir_sha256"], "attempts": [],
+            }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            ir_artifact_paths = [reconstruction_ir_path, validation_path, build_record_path]
+        else:
+            provider = CodexCLIProvider(CodexCLIConfig(
+                cwd=job_dir,
+                artifact_root=ir_dir / "provider-turns",
+                model=model,
+                reasoning_effort=effort,
+                executable=executable,
+                timeout_seconds=timeout,
+                isolated=True,
+                approve_for_me=True,
+            ))
+            built = build_reconstruction_ir(
+                provider,
+                sample_id=sample["sample_id"],
+                images=images,
+                output_dir=ir_dir,
+            )
+            ir_value = built.value
+            builder_thread_id = built.conversation_id
+            ir_artifact_paths = list(built.paths)
+        _bind_reconstruction_ir_to_task(
+            job_dir, reconstruction_ir_path, reconstruction_mode, ir_value["ir_sha256"],
+        )
+
+    agent_cwd = job_dir
+    execution_images = images
+    if reconstruction_mode == "forced_ir":
+        execution_images = []
+    elif reconstruction_mode in {"specialist_ir", "oracle_ir"}:
+        if reconstruction_ir_path is None:
+            raise RuntimeError("IR execution condition is missing a reconstruction IR")
+        agent_cwd = _stage_ir_executor_workspace(
+            job_dir, reconstruction_ir_path, reconstruction_mode,
+        )
+        execution_images = []
     prompt_root = eval_root / "prompts"
     attempts = list(recovery.get("completed_attempts", []))
     runtime = recovery.get("runtime", {})
@@ -1132,7 +1320,9 @@ def run_geometry_job(
     previous_reflection = (
         Path(runtime["previous_reflection"]) if runtime.get("previous_reflection") else None
     )
-    thread_id = runtime.get("thread_id")
+    thread_id = runtime.get("thread_id") or (
+        builder_thread_id if reconstruction_mode == "forced_ir" else None
+    )
     stop_reason = None
     non_improving_attempts = int(runtime.get("non_improving_attempts", 0))
     job_started = time.perf_counter()
@@ -1161,6 +1351,14 @@ def run_geometry_job(
             write_json_atomic(job_dir / "recovery-state.json", recovery)
         attempt_dir = job_dir / "attempts" / attempt_id
         attempt_dir.mkdir(parents=True, exist_ok=True)
+        if number == 1:
+            for path in ir_artifact_paths:
+                role = {
+                    "reconstruction-ir.json": "reconstruction-ir",
+                    "ir-validation.json": "ir-validation",
+                    "ir-build-record.json": "ir-build-record",
+                }.get(path.name, "ir-builder-trace")
+                _record_ledger_artifact_once(ledger, run_dir, attempt_id, path, role)
         candidate = job_dir / f"candidate.{attempt_id}.dwg"
         candidate_stl = attempt_dir / "candidate.stl"
         candidate_topology = attempt_dir / "candidate-topology.json"
@@ -1210,7 +1408,9 @@ def run_geometry_job(
                 score_samples=score_samples, voxel_resolution=voxel_resolution,
                 job_dir=job_dir, run_dir=run_dir, ledger=ledger,
                 attempt_id=attempt_id, attempt_dir=attempt_dir, number=number,
-                run_id=run_id, images=images,
+                run_id=run_id, images=execution_images, agent_cwd=agent_cwd,
+                reconstruction_ir=reconstruction_ir_path,
+                reconstruction_mode=reconstruction_mode,
                 staged_human_feedback=staged_human_feedback,
                 staged_oracle_context=staged_oracle_context, ground_truth=ground_truth,
                 prompt_root=prompt_root, previous_candidate=previous_candidate,
@@ -1438,6 +1638,11 @@ def run_geometry_job(
         "run_id": run_id,
         "model": model,
         "reasoning_effort": effort,
+        "reconstruction_mode": reconstruction_mode,
+        "reconstruction_ir": ({
+            "path": str(reconstruction_ir_path),
+            "sha256": sha256_file(reconstruction_ir_path),
+        } if reconstruction_ir_path is not None else None),
         "status": selected["status"],
         "score": best_score if best_attempt_id else 0.0,
         "passed": selected["status"] == "passed",

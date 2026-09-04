@@ -33,6 +33,7 @@ from cad_evoloop.evaluation.geometry_campaign import (
     slug,
 )
 from cad_evoloop.evaluation.review_feedback import load_human_feedback
+from cad_evoloop.evaluation.reconstruction_ir import IR_MODES
 from cad_evoloop.ledger.ledger import sha256_file
 from cad_evoloop.paths import project_root
 
@@ -43,6 +44,11 @@ HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-checkpoint-v2"
 ORACLE_CONDITIONS = {
     "perception": "durable-kernel-gt-oracle-perception-v1",
     "plan": "durable-kernel-gt-oracle-plan-v1",
+}
+IR_CONDITIONS = {
+    "forced_ir": "durable-kernel-forced-reconstruction-ir-v1",
+    "specialist_ir": "durable-kernel-specialist-reconstruction-ir-v1",
+    "oracle_ir": "durable-kernel-oracle-reconstruction-ir-v1",
 }
 GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
@@ -80,6 +86,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
         workspace / "src/cad_evoloop/evaluation/gt_trajectory.py",
+        workspace / "src/cad_evoloop/evaluation/reconstruction_ir.py",
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
         workspace / "src/cad_evoloop/backends/autocad/core_console.py",
         workspace / "src/cad_evoloop/backends/autocad/audited.py",
@@ -90,8 +97,12 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "evals/geometry-benchmarks/prompts/modeling.md",
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
         workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
+        workspace / "evals/geometry-benchmarks/prompts/modeling-ir.md",
+        workspace / "evals/geometry-benchmarks/prompts/repair-ir.md",
         workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
         workspace / "evals/geometry-benchmarks/gt-attribution-v1.json",
+        workspace / "evals/geometry-benchmarks/ir-ablation-v1.json",
+        workspace / "src/cad_evoloop/evaluation/schemas/reconstruction-ir.schema.json",
     ])
     return {
         path.relative_to(workspace).as_posix(): sha256_file(path)
@@ -167,6 +178,7 @@ def build_agent_campaign_manifest(
     effective_sample_ids: list[str] | None = None,
     human_feedback_binding: dict[str, Any] | None = None,
     oracle_binding: dict[str, Any] | None = None,
+    reconstruction_mode: str = "baseline",
 ) -> dict[str, Any]:
     workspace = project_root()
     effective_sample_ids = effective_sample_ids or selection["sample_ids"]
@@ -174,6 +186,7 @@ def build_agent_campaign_manifest(
         "schema_version": "1.0",
         "protocol": AGENT_GEOMETRY_PROTOCOL,
         "agent_condition": (
+            IR_CONDITIONS[reconstruction_mode] if reconstruction_mode != "baseline" else
             ORACLE_CONDITIONS[oracle_binding["level"]] if oracle_binding else
             HUMAN_FEEDBACK_CONDITION if human_feedback_binding else AGENT_CONDITION
         ),
@@ -195,6 +208,14 @@ def build_agent_campaign_manifest(
             "job_time_budget_seconds": job_time_budget,
             "surface_samples": score_samples,
             "voxel_resolution": voxel_resolution,
+            "reconstruction_mode": reconstruction_mode,
+            "ir_gate_required": reconstruction_mode != "baseline",
+            "image_visibility": (
+                "same_thread_builder_only" if reconstruction_mode == "forced_ir" else
+                "ir_builder_only" if reconstruction_mode == "specialist_ir" else
+                "none" if reconstruction_mode == "oracle_ir" else
+                "cad_agent"
+            ),
             "project_isolation": "one-project-per-sample",
             "decision_transport_retry_limit": DECISION_RETRY_LIMIT,
             "attempt_recovery": {
@@ -236,6 +257,7 @@ def _create_sample_project(
     sample_feedback_path: Path | None = None,
     sample_oracle: dict[str, Any] | None = None,
     sample_oracle_path: Path | None = None,
+    reconstruction_mode: str = "baseline",
 ) -> ProjectStore:
     project_id = slug(sample["sample_id"])
     project_dir = projects_root / project_id
@@ -250,9 +272,11 @@ def _create_sample_project(
             "sample_id": sample["sample_id"],
             "model": model,
             "agent_condition": (
+                IR_CONDITIONS[reconstruction_mode] if reconstruction_mode != "baseline" else
                 ORACLE_CONDITIONS[sample_oracle["oracle_level"]] if sample_oracle else
                 HUMAN_FEEDBACK_CONDITION if sample_feedback else AGENT_CONDITION
             ),
+            "reconstruction_mode": reconstruction_mode,
         },
     )
     input_ids = []
@@ -346,11 +370,16 @@ def _create_sample_project(
         # The inner geometry loop owns modeling iterations. This second outer
         # attempt is reserved for one durable recovery after host interruption.
         max_attempts=GEOMETRY_WORK_UNIT_MAX_ATTEMPTS,
-        parameters={"sample_id": sample["sample_id"]},
+        parameters={
+            "sample_id": sample["sample_id"],
+            "reconstruction_mode": reconstruction_mode,
+        },
     )
     work_units.append(unit)
     apply_plan(store, EngineeringPlan(
         plan_id=(
+            f"geometry-agent-plan-{reconstruction_mode}-v1"
+            if reconstruction_mode != "baseline" else
             f"geometry-agent-plan-gt-oracle-{sample_oracle['oracle_level']}-v1"
             if sample_oracle else
             "geometry-agent-plan-human-feedback-v1" if sample_feedback else
@@ -360,6 +389,8 @@ def _create_sample_project(
         work_units=tuple(work_units),
         contracts=(contract,),
         rationale=(
+            "Validated reconstruction IR gate with condition-specific image isolation"
+            if reconstruction_mode != "baseline" else
             "Hash-bound GT oracle intervention for causal failure attribution"
             if sample_oracle else
             "Hash-bound human review feedback with a clarification gate"
@@ -390,13 +421,24 @@ def run_agent_geometry_campaign(
     feedback_only: bool = False,
     oracle_context: str | Path | None = None,
     oracle_level: str | None = None,
+    reconstruction_mode: str = "baseline",
 ) -> dict[str, Any]:
     if max_jobs is not None and max_jobs < 1:
         raise ValueError("max_jobs must be positive")
+    if reconstruction_mode not in IR_MODES:
+        raise ValueError(f"Unsupported reconstruction mode: {reconstruction_mode}")
     if bool(oracle_context) != bool(oracle_level):
         raise ValueError("oracle_context and oracle_level must be provided together")
     if oracle_context and human_feedback:
         raise ValueError("Oracle and human-feedback interventions must run in separate campaigns")
+    if reconstruction_mode == "oracle_ir" and (
+        oracle_context is None or oracle_level != "perception"
+    ):
+        raise ValueError("oracle_ir requires --oracle-context with --oracle-level perception")
+    if reconstruction_mode in {"forced_ir", "specialist_ir"} and oracle_context:
+        raise ValueError(f"{reconstruction_mode} cannot be combined with oracle context")
+    if reconstruction_mode != "baseline" and human_feedback:
+        raise ValueError("IR ablation conditions cannot be combined with human feedback")
     runtime_environment = collect_runtime_environment(executable)
     if not dry_run:
         require_geometry_environment(runtime_environment)
@@ -504,6 +546,7 @@ def run_agent_geometry_campaign(
         effective_sample_ids=effective_sample_ids,
         human_feedback_binding=feedback_binding,
         oracle_binding=oracle_binding,
+        reconstruction_mode=reconstruction_mode,
     )
     campaign_manifest_path = campaign_dir / "agent-campaign-manifest.json"
     if campaign_manifest_path.is_file():
@@ -518,6 +561,8 @@ def run_agent_geometry_campaign(
                 "sample_id": sample_id,
                 "project_id": slug(sample_id),
                 "model": model,
+                **({"reconstruction_mode": reconstruction_mode}
+                   if reconstruction_mode != "baseline" else {}),
                 **({"oracle_level": oracle_level} if oracle_level else {}),
                 **({
                     "feedback_route": feedback_value["samples"][sample_id]["route"],
@@ -551,6 +596,7 @@ def run_agent_geometry_campaign(
         score_samples=score_samples,
         voxel_resolution=voxel_resolution,
         split_path=selection_path,
+        reconstruction_mode=reconstruction_mode,
     )
     scheduled_this_run = 0
     feedback_dir = campaign_dir / "human-feedback"
@@ -589,6 +635,7 @@ def run_agent_geometry_campaign(
             sample_feedback_path=sample_feedback_path,
             sample_oracle=sample_oracle,
             sample_oracle_path=sample_oracle_path,
+            reconstruction_mode=reconstruction_mode,
         )
         kernel = ProjectKernel(
             store,

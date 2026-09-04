@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-reconstruction-ir-ablation-v1",
+  "objective": "Separate missing explicit preprocessing, perception specialization, and downstream CAD execution capability with a fixed model.",
+  "fixed_controls": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_loop": "evocad-agent-loop-v3",
+    "verifier": "evocad-geometry-v2",
+    "sample_selection": "splits/geometry-lineage-recovery-v1.json"
+  },
+  "conditions": [
+    {
+      "name": "baseline",
+      "reconstruction_mode": "baseline",
+      "ir_builder": null,
+      "cad_agent_input": "original images",
+      "causal_question": "End-to-end reference condition"
+    },
+    {
+      "name": "forced_ir",
+      "reconstruction_mode": "forced_ir",
+      "ir_builder": "same model thread as CAD execution",
+      "cad_agent_input": "validated IR plus images retained in the same conversation",
+      "causal_question": "Does forcing explicit preprocessing improve the same Agent?"
+    },
+    {
+      "name": "specialist_ir",
+      "reconstruction_mode": "specialist_ir",
+      "ir_builder": "independent thread using the same model",
+      "cad_agent_input": "validated IR only",
+      "causal_question": "Does task and context separation improve image-to-IR inference?"
+    },
+    {
+      "name": "oracle_ir",
+      "reconstruction_mode": "oracle_ir",
+      "ir_builder": "GT perception oracle adapter",
+      "cad_agent_input": "unordered exact feature IR only",
+      "causal_question": "Can the CAD Agent execute when image inference error is removed?",
+      "evaluation_only": true
+    }
+  ],
+  "primary_metrics": [
+    "strict_pass_rate",
+    "first_attempt_score",
+    "selected_score",
+    "iterations",
+    "voxel_iou",
+    "normalized_chamfer"
+  ],
+  "ir_diagnostics": [
+    "schema_validation",
+    "dimension_observed_inferred_assumed_counts",
+    "feature_confidence",
+    "ambiguity_count",
+    "builder_attempt_count"
+  ],
+  "interpretation": {
+    "forced_ir_gt_baseline": "The Agent policy lacked a mandatory explicit preprocessing stage.",
+    "specialist_ir_gt_forced_ir": "Context or role separation helps perception and reconstruction.",
+    "oracle_ir_gt_specialist_ir": "Image-to-IR capability or input identifiability remains limiting.",
+    "oracle_ir_failure": "Downstream planning, CAD translation, MCP, or verifier remains limiting."
+  },
+  "reporting_rules": [
+    "Never pool oracle_ir with normal benchmark accuracy.",
+    "Use paired samples and record every IR artifact and model trajectory.",
+    "Do not infer population causality from a single sample or replicate."
+  ]
+}

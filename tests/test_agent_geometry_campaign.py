@@ -114,6 +114,57 @@ def test_preflight_reports_missing_geometry_distribution() -> None:
         agent_geometry_campaign.require_geometry_environment(environment)
 
 
+def test_forced_ir_campaign_records_ablation_controls(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    data = workspace / ".local/data"
+    sample_dir = data / "sample"
+    sample_dir.mkdir(parents=True)
+    (sample_dir / "input.png").write_bytes(b"input")
+    (sample_dir / "truth.step").write_bytes(b"truth")
+    manifest = data / "manifest.json"
+    manifest.write_text(json.dumps({
+        "schema_version": "1.0",
+        "samples": [{
+            "sample_id": "sample:1", "dataset": "test", "task": "image-to-cad",
+            "input_images": ["sample/input.png"], "ground_truth_step": "sample/truth.step",
+        }],
+    }), encoding="utf-8")
+    splits = workspace / "evals/geometry-benchmarks/splits"
+    splits.mkdir(parents=True)
+    (splits / "source.json").write_text("{}", encoding="utf-8")
+    selection = {
+        "kind": "frozen-agent-evaluation-selection",
+        "source_split": "source.json",
+        "source_split_sha256": hashlib.sha256(b"{}").hexdigest(),
+        "source_manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "sample_count": 1,
+        "sample_ids": ["sample:1"],
+    }
+    selection["selection_sha256"] = canonical(selection, "selection_sha256")
+    selection_path = splits / "selection.json"
+    selection_path.write_text(json.dumps(selection), encoding="utf-8")
+    monkeypatch.setattr(agent_geometry_campaign, "project_root", lambda: workspace)
+
+    result = agent_geometry_campaign.run_agent_geometry_campaign(
+        manifest, selection_path, campaign="forced-ir-dry", reconstruction_mode="forced_ir",
+        dry_run=True,
+    )
+
+    campaign = result["campaign_manifest"]
+    assert campaign["agent_condition"] == "durable-kernel-forced-reconstruction-ir-v1"
+    assert campaign["execution"]["ir_gate_required"] is True
+    assert campaign["execution"]["image_visibility"] == "same_thread_builder_only"
+    assert result["jobs"][0]["reconstruction_mode"] == "forced_ir"
+
+
+def test_oracle_ir_requires_perception_oracle() -> None:
+    with pytest.raises(ValueError, match="requires --oracle-context"):
+        agent_geometry_campaign.run_agent_geometry_campaign(
+            "missing-manifest", "missing-selection", campaign="bad",
+            reconstruction_mode="oracle_ir", dry_run=True,
+        )
+
+
 def test_geometry_work_unit_reserves_one_host_interruption_recovery(
     tmp_path: Path,
 ) -> None:

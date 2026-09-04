@@ -47,7 +47,10 @@ def test_geometry_campaign_is_a_contract_bound_work_unit(tmp_path: Path) -> None
         parameters={"sample_id": "sample:1"},
     )
 
+    captured = {}
+
     def runner(**kwargs):
+        captured.update(kwargs)
         job = tmp_path / "campaign-job"
         job.mkdir()
         (job / "candidate.dwg").write_bytes(b"dwg")
@@ -71,6 +74,7 @@ def test_geometry_campaign_is_a_contract_bound_work_unit(tmp_path: Path) -> None
     results = ProjectKernel(store, {"geometry_campaign": executor}).run()
 
     assert results[-1].status == "completed"
+    assert captured["reconstruction_mode"] == "baseline"
     state = store.load()
     assert state["work_units"]["geometry-sample-1"]["status"] == "succeeded"
     gate = state["contract_evaluations"]["geometry-sample-1-1-gate"]

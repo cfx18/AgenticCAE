@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evocad.local/schemas/reconstruction-ir.schema.json",
+  "title": "EvoCAD Reconstruction IR",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "protocol", "sample_id", "source_kind", "source_summary",
+    "units", "views", "dimensions", "cross_view_correspondences", "features",
+    "constraints", "construction_hypotheses", "ambiguities", "global_confidence"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "protocol": {"type": "string", "const": "evocad-reconstruction-ir-v1"},
+    "sample_id": {"type": "string", "minLength": 1},
+    "source_kind": {"type": "string", "enum": ["image_inference", "gt_oracle"]},
+    "source_summary": {"type": "string"},
+    "units": {"type": "string", "minLength": 1},
+    "views": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["view_id", "projection", "elements", "notes"],
+        "properties": {
+          "view_id": {"type": "string", "minLength": 1},
+          "projection": {"type": "string", "minLength": 1},
+          "elements": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["element_id", "kind", "geometry", "visibility", "evidence_text"],
+              "properties": {
+                "element_id": {"type": "string", "minLength": 1},
+                "kind": {"type": "string", "minLength": 1},
+                "geometry": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["representation", "description", "data_json"],
+                  "properties": {
+                    "representation": {"type": "string"},
+                    "description": {"type": "string"},
+                    "data_json": {"type": "string"}
+                  }
+                },
+                "visibility": {"type": "string"},
+                "evidence_text": {"type": "string"}
+              }
+            }
+          },
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "dimension_id", "quantity", "value", "unit", "applies_to", "status",
+          "evidence", "confidence"
+        ],
+        "properties": {
+          "dimension_id": {"type": "string", "minLength": 1},
+          "quantity": {"type": "string", "minLength": 1},
+          "value": {"type": ["number", "string", "null"]},
+          "unit": {"type": "string"},
+          "applies_to": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": "string", "enum": ["observed", "inferred", "assumed", "unknown"]},
+          "evidence": {"type": "string"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "cross_view_correspondences": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["correspondence_id", "element_ids", "interpretation", "confidence"],
+        "properties": {
+          "correspondence_id": {"type": "string", "minLength": 1},
+          "element_ids": {"type": "array", "items": {"type": "string"}},
+          "interpretation": {"type": "string"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "features": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "feature_id", "feature_type", "operation", "intent", "geometry", "placement",
+          "dimension_ids", "evidence_ids", "dependencies", "confidence", "alternatives"
+        ],
+        "properties": {
+          "feature_id": {"type": "string", "minLength": 1},
+          "feature_type": {"type": "string", "minLength": 1},
+          "operation": {"type": "string", "minLength": 1},
+          "intent": {"type": "string"},
+          "geometry": {
+            "type": "object", "additionalProperties": false,
+            "required": ["representation", "description", "data_json"],
+            "properties": {
+              "representation": {"type": "string"},
+              "description": {"type": "string"},
+              "data_json": {"type": "string"}
+            }
+          },
+          "placement": {
+            "type": "object", "additionalProperties": false,
+            "required": ["description", "data_json"],
+            "properties": {
+              "description": {"type": "string"},
+              "data_json": {"type": "string"}
+            }
+          },
+          "dimension_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}},
+          "dependencies": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["description", "data_json"],
+              "properties": {
+                "description": {"type": "string"},
+                "data_json": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["constraint_id", "constraint_type", "participants", "parameters_json", "status", "confidence"],
+        "properties": {
+          "constraint_id": {"type": "string", "minLength": 1},
+          "constraint_type": {"type": "string", "minLength": 1},
+          "participants": {"type": "array", "items": {"type": "string"}},
+          "parameters_json": {"type": "string"},
+          "status": {"type": "string", "enum": ["observed", "inferred", "assumed"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "construction_hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["hypothesis_id", "ordered_feature_ids", "boolean_relations", "rationale", "confidence"],
+        "properties": {
+          "hypothesis_id": {"type": "string", "minLength": 1},
+          "ordered_feature_ids": {"type": "array", "items": {"type": "string"}},
+          "boolean_relations": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["operation", "operand_feature_ids", "result_feature_id", "parameters_json"],
+              "properties": {
+                "operation": {"type": "string"},
+                "operand_feature_ids": {"type": "array", "items": {"type": "string"}},
+                "result_feature_id": {"type": ["string", "null"]},
+                "parameters_json": {"type": "string"}
+              }
+            }
+          },
+          "rationale": {"type": "string"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["ambiguity_id", "question", "affects", "candidates", "resolution", "confidence"],
+        "properties": {
+          "ambiguity_id": {"type": "string", "minLength": 1},
+          "question": {"type": "string"},
+          "affects": {"type": "array", "items": {"type": "string"}},
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["description", "data_json"],
+              "properties": {
+                "description": {"type": "string"},
+                "data_json": {"type": "string"}
+              }
+            }
+          },
+          "resolution": {"type": ["string", "null"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "global_confidence": {"type": "number", "minimum": 0, "maximum": 1}
+  }
+}

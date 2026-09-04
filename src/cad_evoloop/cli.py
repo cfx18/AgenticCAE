@@ -291,6 +291,11 @@ def _batch_agent_geometry() -> None:
     parser.add_argument("--oracle-context", type=Path)
     parser.add_argument("--oracle-level", choices=("perception", "plan"))
     parser.add_argument(
+        "--reconstruction-mode",
+        choices=("baseline", "forced_ir", "specialist_ir", "oracle_ir"),
+        default="baseline",
+    )
+    parser.add_argument(
         "--feedback-only", action="store_true",
         help="schedule only actionable samples in the bound human feedback manifest",
     )
@@ -313,6 +318,7 @@ def _batch_agent_geometry() -> None:
         feedback_only=args.feedback_only,
         oracle_context=args.oracle_context,
         oracle_level=args.oracle_level,
+        reconstruction_mode=args.reconstruction_mode,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -334,6 +340,11 @@ def _start_agent_geometry() -> None:
     parser.add_argument("--human-feedback", type=Path)
     parser.add_argument("--oracle-context", type=Path)
     parser.add_argument("--oracle-level", choices=("perception", "plan"))
+    parser.add_argument(
+        "--reconstruction-mode",
+        choices=("baseline", "forced_ir", "specialist_ir", "oracle_ir"),
+        default="baseline",
+    )
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args()
     command = [
@@ -346,6 +357,7 @@ def _start_agent_geometry() -> None:
         "--job-time-budget", str(args.job_time_budget),
         "--score-samples", str(args.score_samples),
         "--voxel-resolution", str(args.voxel_resolution),
+        "--reconstruction-mode", args.reconstruction_mode,
     ]
     if args.max_jobs is not None:
         command.extend(("--max-jobs", str(args.max_jobs)))
