@@ -38,3 +38,15 @@ def test_main_forwards_help_to_geometry_split(monkeypatch, capsys) -> None:
 
     assert exit_info.value.code == 0
     assert "--pilot-count" in capsys.readouterr().out
+
+
+def test_main_forwards_help_to_identifiability_probe(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["cad-evoloop", "gt-identifiability-probe", "--help"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "--replicates" in output
+    assert "--sample" in output

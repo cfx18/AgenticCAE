@@ -882,6 +882,38 @@ def _check_experimental_controls(
     return {"valid": not mismatches, "observed": observed, "mismatches": mismatches}
 
 
+def refine_attribution_with_identifiability(
+    attribution: dict[str, Any], identifiability: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if (
+        identifiability is None
+        or attribution.get("primary_layer") != "observation_to_feature_inference"
+        or identifiability.get("dimensionally_complete_for_exact_reconstruction")
+    ):
+        return attribution
+    return {
+        **attribution,
+        "status": "confounded",
+        "primary_layer": "input_specification_or_observation_inference",
+        "claim": (
+            "Exact features pass, but the input does not explicitly dimension the GT "
+            "feature parameters; missing specification is confounded with perception."
+        ),
+        "agent_vs_model_ownership": {
+            "status": "confounded_by_input_specification",
+            "claim": (
+                "Agent-versus-model ownership is not eligible until the benchmark supplies "
+                "the missing constraints or evaluates a tolerance consistent with raster inference."
+            ),
+            "required_controls": [
+                "dimensionally_complete_input",
+                "same_model_alternate_perception_policy",
+                "fixed_agent_alternate_model",
+            ],
+        },
+    }
+
+
 def build_attribution_report(
     manifest: str | Path,
     sample_id: str,
@@ -891,6 +923,7 @@ def build_attribution_report(
     perception_result: str | Path | None = None,
     plan_result: str | Path | None = None,
     executor_result: str | Path | None = None,
+    input_identifiability: str | Path | None = None,
     sample_count: int = 4000,
     voxel_resolution: int = 40,
 ) -> dict[str, Any]:
@@ -929,6 +962,22 @@ def build_attribution_report(
         raw_results, conditions["executor"], trajectory,
     )
     attribution = infer_failure_attribution(conditions, self_check)
+    identifiability = None
+    if input_identifiability is not None:
+        identifiability = json.loads(
+            _workspace_path(input_identifiability).read_text(encoding="utf-8")
+        )
+        if identifiability.get("protocol") != "evocad-input-identifiability-v1":
+            raise ValueError("Unsupported input identifiability assessment")
+        if identifiability.get("sample_id") != sample_id:
+            raise ValueError("Input identifiability assessment targets a different sample")
+        if identifiability.get("source_manifest_sha256") != sha256_file(manifest_path):
+            raise ValueError("Input identifiability assessment uses a different source manifest")
+        if identifiability.get("assessment_sha256") != _canonical_hash(
+            identifiability, "assessment_sha256",
+        ):
+            raise ValueError("Input identifiability assessment digest mismatch")
+        attribution = refine_attribution_with_identifiability(attribution, identifiability)
     if not control_check["valid"]:
         attribution = {
             "status": "not_identified",
@@ -947,6 +996,7 @@ def build_attribution_report(
         "trajectory": trajectory,
         "ground_truth_self_check": self_check,
         "conditions": conditions,
+        "input_identifiability": identifiability,
         "observational_diagnostics": observational_trace_diagnostics(
             raw_results["normal"], trajectory,
         ),

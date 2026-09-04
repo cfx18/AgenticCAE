@@ -29,6 +29,7 @@ from .evaluation.gt_trajectory import (
     extract_manifest_trajectories,
     replay_gt_trajectory,
 )
+from .evaluation.input_identifiability import run_input_identifiability_probe
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
 from .evaluation.review_feedback import (
     ingest_human_reviews,
@@ -544,6 +545,7 @@ def _report_gt_attribution() -> None:
     parser.add_argument("--perception-result", type=Path)
     parser.add_argument("--plan-result", type=Path)
     parser.add_argument("--executor-result", type=Path)
+    parser.add_argument("--input-identifiability", type=Path)
     parser.add_argument("--score-samples", type=int, default=4000)
     parser.add_argument("--voxel-resolution", type=int, default=40)
     args = parser.parse_args()
@@ -553,6 +555,7 @@ def _report_gt_attribution() -> None:
         perception_result=args.perception_result,
         plan_result=args.plan_result,
         executor_result=args.executor_result,
+        input_identifiability=args.input_identifiability,
         sample_count=args.score_samples,
         voxel_resolution=args.voxel_resolution,
     )
@@ -560,6 +563,35 @@ def _report_gt_attribution() -> None:
         "sample_id": result["sample_id"],
         "attribution": result["attribution"],
         "report_sha256": result["report_sha256"],
+    }, indent=2, ensure_ascii=False))
+
+
+def _probe_input_identifiability() -> None:
+    parser = argparse.ArgumentParser(
+        description="Probe whether a drawing explicitly specifies its GT feature parameters",
+    )
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--sample", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--reasoning-effort", default="medium")
+    parser.add_argument("--replicates", type=int, default=3)
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--score-samples", type=int, default=4000)
+    parser.add_argument("--voxel-resolution", type=int, default=40)
+    args = parser.parse_args()
+    result = run_input_identifiability_probe(
+        args.manifest, args.sample, args.output,
+        model=args.model, effort=args.reasoning_effort,
+        replicates=args.replicates, timeout=args.timeout,
+        sample_count=args.score_samples, voxel_resolution=args.voxel_resolution,
+    )
+    print(json.dumps({
+        "sample_id": result["sample_id"],
+        "replicates": result["replicates"],
+        "explicit_parameter_coverage": result["explicit_parameter_coverage"],
+        "dimensionally_complete": result["dimensionally_complete_for_exact_reconstruction"],
+        "assessment_sha256": result["assessment_sha256"],
     }, indent=2, ensure_ascii=False))
 
 
@@ -607,6 +639,9 @@ def main() -> None:
         "gt-trajectory-replay": (_replay_gt, "replay one GT CadQuery trajectory"),
         "gt-attribution-report": (
             _report_gt_attribution, "attribute failures with GT oracle interventions",
+        ),
+        "gt-identifiability-probe": (
+            _probe_input_identifiability, "probe drawing-to-GT parameter identifiability",
         ),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:

@@ -495,3 +495,19 @@ that stage, and it does not establish a population causal rate because only one
 oracle replicate was run. The immutable
 summary and artifact hashes are recorded in
 `evals/geometry-benchmarks/reference-runs/gt-attribution-00186338-r1.json`.
+
+An input-identifiability audit then tested whether the perception oracle had added
+information absent from the normal task. Three independent, ephemeral sol probes
+were run with a read-only sandbox, empty MCP configuration, and prohibited-tool
+event checks. All three extracted exactly the same printed dimensions: overall
+height `0.7421`, overall length `0.7500`, and overall width `0.2656`. All three
+judged the drawing dimensionally incomplete, and no probe used a tool.
+
+Only 3 of 29 descriptive GT feature values matched explicit dimensions at displayed
+precision; 26 internal profile, location, arc, and thickness values were not
+explicitly constrained. Because those values may include dependent coordinates,
+the `10.34%` figure is descriptive rather than a formal degrees-of-freedom measure.
+The unanimous observation of only three overall dimensions is sufficient to revise
+the sample-level conclusion: Agent-versus-model ownership is confounded by input
+specification. The exact-feature oracle proved execution capability but also supplied
+hidden information, so its success cannot be charged to normal perception failure.

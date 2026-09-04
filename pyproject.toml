@@ -56,6 +56,7 @@ cad-evoloop-agent-clarification-submit = "cad_evoloop.cli:_submit_agent_clarific
 cad-evoloop-gt-trajectory-extract = "cad_evoloop.cli:_extract_gt_trajectories"
 cad-evoloop-gt-trajectory-replay = "cad_evoloop.cli:_replay_gt"
 cad-evoloop-gt-attribution-report = "cad_evoloop.cli:_report_gt_attribution"
+cad-evoloop-gt-identifiability-probe = "cad_evoloop.cli:_probe_input_identifiability"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

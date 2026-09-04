@@ -154,6 +154,21 @@ def test_experimental_controls_reject_model_and_gt_hash_mismatch() -> None:
     }
 
 
+def test_incomplete_input_confounds_perception_ownership() -> None:
+    result = gt_trajectory.refine_attribution_with_identifiability(
+        {
+            "status": "identified",
+            "primary_layer": "observation_to_feature_inference",
+            "claim": "oracle contrast",
+        },
+        {"dimensionally_complete_for_exact_reconstruction": False},
+    )
+
+    assert result["status"] == "confounded"
+    assert result["primary_layer"] == "input_specification_or_observation_inference"
+    assert result["agent_vs_model_ownership"]["status"] == "confounded_by_input_specification"
+
+
 def test_stage_oracle_context_binds_sample_and_embeds_prompt(tmp_path, monkeypatch) -> None:
     from cad_evoloop.evaluation import geometry_campaign
 

@@ -74,20 +74,44 @@
       "interpretation": "Missing counterfactual, not an execution failure"
     }
   },
+  "input_identifiability": {
+    "model": "gpt-5.6-sol",
+    "replicates": 3,
+    "prohibited_tool_calls": 0,
+    "consensus_explicit_dimensions": [
+      "0.7421",
+      "0.7500",
+      "0.2656"
+    ],
+    "dimensionally_complete_votes": 0,
+    "gt_feature_values": 29,
+    "explicitly_matched_gt_values": 3,
+    "hidden_gt_values": 26,
+    "explicit_parameter_coverage": 0.1034,
+    "assessment_sha256": "cfef8d04f73f5279b255b29e1a68f2334cbf94e77fdbcdc6381e67ec9d36c659",
+    "assessment_file_sha256": "3634104a1d751705c9eb2d03ee2e97bef25ceabc743925c669c50af5e3c629a9"
+  },
   "diagnostic_attribution": {
-    "primary_layer": "observation_to_feature_inference",
-    "reason": "The unordered exact feature inventory passed under the same model and tools while the normal condition failed.",
-    "agent_vs_model_ownership": "not_identified",
+    "status": "confounded",
+    "primary_layer": "input_specification_or_observation_inference",
+    "reason": "The unordered exact feature inventory passed, but it supplied exact internal parameters absent from the agent-visible drawing.",
+    "agent_vs_model_ownership": "confounded_by_input_specification",
     "required_controls": [
+      "dimensionally_complete_input",
       "same_model_alternate_perception_policy",
       "fixed_agent_alternate_model"
     ],
     "evidence_grade": "single_replicate_diagnostic",
     "population_causal_claim_valid": false
   },
+  "final_attribution_report": {
+    "report_sha256": "9173142620c0ac69466fd22c93039ba034d535d2c4d81cd61a4747913f2f42a2",
+    "file_sha256": "24af0a9d9ad34304b7d30101337a42faae6fc2e7b06877ab83e7ce830b9171f4"
+  },
   "notes": [
     "Oracle runs are evaluation-only interventions and are excluded from normal benchmark accuracy.",
     "The plan intervention is not required for the earliest paired contrast, but independently confirms exact-plan execution capability.",
-    "At least three paired stochastic replicates are required before estimating a causal failure rate."
+    "At least three paired stochastic replicates are required before estimating a causal failure rate.",
+    "The 29 GT values include dependent coordinates, so 10.34% coverage is descriptive; the unanimous three-dimension observation is the primary identifiability evidence."
   ]
 }

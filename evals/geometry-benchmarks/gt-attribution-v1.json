@@ -2,6 +2,11 @@
   "schema_version": "1.0",
   "protocol": "evocad-trajectory-attribution-v1",
   "objective": "Separate benchmark, perception, planning, and execution failures using paired GT oracle interventions.",
+  "eligibility_gate": {
+    "id": "input_identifiability",
+    "requirement": "Audit which GT feature parameters are explicitly constrained by the agent-visible input before assigning perception ownership.",
+    "failure_effect": "Mark Agent-versus-model ownership as confounded by input specification."
+  },
   "conditions": [
     {
       "id": "normal",
@@ -76,6 +81,7 @@
     "A GT feature program is one valid construction trajectory, not necessarily the unique or shortest trajectory.",
     "A single stochastic run is diagnostic only; causal rate estimates require paired replicates.",
     "A failed plan condition combines model tool use with action translation until an alternate executor policy is tested.",
-    "Oracle contrasts localize a failure stage; they do not alone separate Agent scaffolding from base-model capability inside that stage."
+    "Oracle contrasts localize a failure stage; they do not alone separate Agent scaffolding from base-model capability inside that stage.",
+    "An exact-parameter oracle can add information absent from the drawing; its success is not evidence of perception failure until input identifiability passes."
   ]
 }

@@ -35,6 +35,18 @@ model fixed and replace the perception policy, then keep the Agent fixed and rep
 the model. Only the interaction of those contrasts supports an Agent-versus-model
 claim.
 
+Before making that contrast, run the input-identifiability gate. A read-only,
+tool-disabled VLM extracts only printed dimensions from the original drawing across
+three independent probes. The evaluator then matches those annotations to GT feature
+values at the displayed decimal precision. If GT parameters remain unlabelled, the
+oracle has added information that the normal Agent never received; Agent-versus-model
+ownership is therefore confounded by benchmark specification.
+
+```powershell
+python -m cad_evoloop.cli gt-identifiability-probe MANIFEST `
+  --sample SAMPLE --output OUTPUT --model gpt-5.6-sol --replicates 3
+```
+
 ## Static extraction
 
 `gt-trajectory-extract` parses CadQuery source with Python's AST. It does not import

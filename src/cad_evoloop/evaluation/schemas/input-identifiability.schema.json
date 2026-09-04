@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sample_id",
+    "image_quality",
+    "views_present",
+    "explicit_dimensions",
+    "unlabeled_feature_observations",
+    "dimensionally_complete",
+    "assessment"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image_quality": {
+      "type": "string",
+      "enum": ["sufficient", "insufficient"]
+    },
+    "views_present": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["front", "right", "left", "top", "bottom", "rear", "isometric", "other"]
+      }
+    },
+    "explicit_dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "displayed_text",
+          "numeric_value",
+          "decimal_places",
+          "quantity",
+          "view",
+          "evidence_region"
+        ],
+        "properties": {
+          "displayed_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "numeric_value": {
+            "type": "number"
+          },
+          "decimal_places": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 12
+          },
+          "quantity": {
+            "type": "string",
+            "enum": ["overall_length", "overall_width", "overall_height", "diameter", "radius", "angle", "feature_length", "feature_width", "feature_height", "unknown"]
+          },
+          "view": {
+            "type": "string",
+            "enum": ["front", "right", "left", "top", "bottom", "rear", "isometric", "other"]
+          },
+          "evidence_region": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y", "width", "height"],
+            "properties": {
+              "x": {"type": "number", "minimum": 0, "maximum": 1},
+              "y": {"type": "number", "minimum": 0, "maximum": 1},
+              "width": {"type": "number", "minimum": 0, "maximum": 1},
+              "height": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        }
+      }
+    },
+    "unlabeled_feature_observations": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "dimensionally_complete": {
+      "type": "boolean"
+    },
+    "assessment": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
