@@ -614,9 +614,17 @@ def infer_failure_attribution(
     if perception.get("passed"):
         return {
             "status": "identified",
-            "primary_layer": "agent_perception_or_feedback_design",
-            "claim": "Oracle perception passes while the normal condition fails under the same model and tools.",
+            "primary_layer": "observation_to_feature_inference",
+            "claim": "Exact features pass while the normal image-to-feature path fails under the same model and tools.",
             "missing_conditions": [],
+            "agent_vs_model_ownership": {
+                "status": "not_identified",
+                "claim": "The oracle removes both Agent observation design and model visual inference error.",
+                "required_controls": [
+                    "same_model_alternate_perception_policy",
+                    "fixed_agent_alternate_model",
+                ],
+            },
         }
     plan = available.get("plan")
     if plan is None:
@@ -631,6 +639,14 @@ def infer_failure_attribution(
             "primary_layer": "planning_policy",
             "claim": "The exact plan passes, but an unordered exact feature inventory does not.",
             "missing_conditions": [],
+            "agent_vs_model_ownership": {
+                "status": "not_identified",
+                "claim": "The contrast localizes planning but does not separate policy scaffolding from model reasoning capacity.",
+                "required_controls": [
+                    "same_model_alternate_planning_policy",
+                    "fixed_agent_alternate_model",
+                ],
+            },
         }
     executor = available.get("executor")
     if executor is None:
@@ -648,12 +664,20 @@ def infer_failure_attribution(
                 "Separate model/tool-use limitations from prompt translation with an alternate executor policy."
             ),
             "missing_conditions": [],
+            "agent_vs_model_ownership": {
+                "status": "not_identified",
+                "required_controls": ["same_model_alternate_action_translation"],
+            },
         }
     return {
         "status": "identified",
         "primary_layer": "executor_or_cad_interface",
         "claim": "Exact GT execution fails, so model-level attribution is not valid.",
         "missing_conditions": [],
+        "agent_vs_model_ownership": {
+            "status": "infrastructure_first",
+            "required_controls": [],
+        },
     }
 
 

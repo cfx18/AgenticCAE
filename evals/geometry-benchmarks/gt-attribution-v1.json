@@ -68,12 +68,14 @@
     },
     {
       "if": "perception passes and normal fails",
-      "primary_layer": "agent_perception_or_feedback_design"
+      "primary_layer": "observation_to_feature_inference",
+      "agent_vs_model_ownership": "not identified without policy and model controls"
     }
   ],
   "limitations": [
     "A GT feature program is one valid construction trajectory, not necessarily the unique or shortest trajectory.",
     "A single stochastic run is diagnostic only; causal rate estimates require paired replicates.",
-    "A failed plan condition combines model tool use with action translation until an alternate executor policy is tested."
+    "A failed plan condition combines model tool use with action translation until an alternate executor policy is tested.",
+    "Oracle contrasts localize a failure stage; they do not alone separate Agent scaffolding from base-model capability inside that stage."
   ]
 }

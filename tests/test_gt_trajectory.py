@@ -72,7 +72,7 @@ def test_oracle_levels_do_not_leak_source_or_order_into_perception(tmp_path, mon
         ({
             "normal": {"passed": False}, "perception": {"passed": True},
             "plan": {"passed": True}, "executor": {"passed": True},
-        }, "agent_perception_or_feedback_design"),
+        }, "observation_to_feature_inference"),
         ({
             "normal": {"passed": False}, "perception": {"passed": False},
             "plan": {"passed": True}, "executor": {"passed": True},

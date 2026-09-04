@@ -27,6 +27,14 @@ These are controlled-system effects, not intrinsic properties of the base model.
 For stochastic Agent conditions, use at least three paired replicates and report
 each oracle condition separately from normal benchmark accuracy.
 
+The ladder localizes a failed computational stage, not ownership inside that stage.
+For example, perception-oracle success means the normal image-to-feature path is the
+bottleneck; it does not by itself distinguish a weak Agent observation policy from a
+base-model vision limitation. Ownership requires two further controls: keep the
+model fixed and replace the perception policy, then keep the Agent fixed and replace
+the model. Only the interaction of those contrasts supports an Agent-versus-model
+claim.
+
 ## Static extraction
 
 `gt-trajectory-extract` parses CadQuery source with Python's AST. It does not import

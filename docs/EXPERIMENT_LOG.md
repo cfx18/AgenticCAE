@@ -487,9 +487,11 @@ first attempt. Their IoUs were both `0.999108`; normalized Chamfer was `0.002941
 and `0.002947`, respectively. In contrast, the normal recovery run required 14
 attempts and selected `99.25` with IoU `0.968739`.
 
-This establishes a sample-level diagnostic attribution to the normal Agent's
-perception/feedback design: exact features are sufficient for the same model to use
-the same tools successfully, even without feature order. It does not yet establish a
-population causal rate because only one oracle replicate was run. The immutable
+This establishes a sample-level diagnostic attribution to the
+observation-to-feature-inference stage: exact features are sufficient for the same
+model to use the same tools successfully, even without feature order. It does not
+yet separate Agent observation design from sol's visual inference capacity inside
+that stage, and it does not establish a population causal rate because only one
+oracle replicate was run. The immutable
 summary and artifact hashes are recorded in
 `evals/geometry-benchmarks/reference-runs/gt-attribution-00186338-r1.json`.

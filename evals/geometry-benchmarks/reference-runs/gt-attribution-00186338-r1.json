@@ -75,8 +75,13 @@
     }
   },
   "diagnostic_attribution": {
-    "primary_layer": "agent_perception_or_feedback_design",
+    "primary_layer": "observation_to_feature_inference",
     "reason": "The unordered exact feature inventory passed under the same model and tools while the normal condition failed.",
+    "agent_vs_model_ownership": "not_identified",
+    "required_controls": [
+      "same_model_alternate_perception_policy",
+      "fixed_agent_alternate_model"
+    ],
     "evidence_grade": "single_replicate_diagnostic",
     "population_causal_claim_valid": false
   },
