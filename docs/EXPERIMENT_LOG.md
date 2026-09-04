@@ -474,8 +474,22 @@ this case. Executable CadQuery replay is currently recorded as unavailable becau
 the workspace runtime provides OCP but not the `cadquery` wrapper; this is treated as
 a missing counterfactual, not as an execution failure.
 
-Current normal-run attribution remains `not_identified`: the `99.25` recovery trace
-is available, while perception, plan, and executable-replay counterfactuals have not
-yet all completed. Generated local artifacts are under
+At the initial reporting checkpoint, attribution was `not_identified`: the `99.25`
+recovery trace was available while oracle counterfactuals had not completed.
+Generated local artifacts are under
 `reports/generated/gt-attribution-00186338/` and the method is documented in
 `docs/GT_TRAJECTORY_ATTRIBUTION.md`.
+
+The first paired oracle replicate subsequently completed under the same sol model,
+reasoning effort, iteration/time budget, AutoCAD MCP, and strict verifier. Both the
+unordered perception oracle and ordered plan oracle strict-passed at `100.0` on the
+first attempt. Their IoUs were both `0.999108`; normalized Chamfer was `0.002941`
+and `0.002947`, respectively. In contrast, the normal recovery run required 14
+attempts and selected `99.25` with IoU `0.968739`.
+
+This establishes a sample-level diagnostic attribution to the normal Agent's
+perception/feedback design: exact features are sufficient for the same model to use
+the same tools successfully, even without feature order. It does not yet establish a
+population causal rate because only one oracle replicate was run. The immutable
+summary and artifact hashes are recorded in
+`evals/geometry-benchmarks/reference-runs/gt-attribution-00186338-r1.json`.

@@ -587,14 +587,21 @@ def infer_failure_attribution(
             "missing_conditions": missing,
         }
     normal = available.get("normal")
-    if normal and normal.get("passed"):
+    if normal is None:
+        return {
+            "status": "not_identified", "primary_layer": None,
+            "claim": "The normal Agent condition is required as the observational baseline.",
+            "missing_conditions": ["normal"],
+        }
+    if normal.get("passed"):
         return {
             "status": "no_failure",
             "primary_layer": None,
             "claim": "The normal Agent condition already satisfies the strict contract.",
             "missing_conditions": missing,
         }
-    if missing:
+    perception = available.get("perception")
+    if perception is None:
         return {
             "status": "not_identified",
             "primary_layer": None,
@@ -602,19 +609,37 @@ def infer_failure_attribution(
                 "The observational trajectory localizes what went wrong but cannot distinguish "
                 "Agent design from model capability without the missing oracle interventions."
             ),
-            "missing_conditions": missing,
+            "missing_conditions": ["perception"],
         }
-    perception = available["perception"]
-    plan = available["plan"]
-    executor = available["executor"]
-    if not executor.get("passed"):
+    if perception.get("passed"):
         return {
             "status": "identified",
-            "primary_layer": "executor_or_cad_interface",
-            "claim": "Exact GT execution fails, so model-level attribution is not valid.",
+            "primary_layer": "agent_perception_or_feedback_design",
+            "claim": "Oracle perception passes while the normal condition fails under the same model and tools.",
             "missing_conditions": [],
         }
-    if not plan.get("passed"):
+    plan = available.get("plan")
+    if plan is None:
+        return {
+            "status": "not_identified", "primary_layer": None,
+            "claim": "Perception remains insufficient; the plan intervention is required next.",
+            "missing_conditions": ["plan"],
+        }
+    if plan.get("passed"):
+        return {
+            "status": "identified",
+            "primary_layer": "planning_policy",
+            "claim": "The exact plan passes, but an unordered exact feature inventory does not.",
+            "missing_conditions": [],
+        }
+    executor = available.get("executor")
+    if executor is None:
+        return {
+            "status": "not_identified", "primary_layer": None,
+            "claim": "The exact plan still fails; direct execution is required to isolate the remaining layer.",
+            "missing_conditions": ["executor"],
+        }
+    if executor.get("passed"):
         return {
             "status": "partially_identified",
             "primary_layer": "model_tool_use_or_action_translation",
@@ -624,17 +649,10 @@ def infer_failure_attribution(
             ),
             "missing_conditions": [],
         }
-    if not perception.get("passed"):
-        return {
-            "status": "identified",
-            "primary_layer": "planning_policy",
-            "claim": "The exact plan passes, but an unordered exact feature inventory does not.",
-            "missing_conditions": [],
-        }
     return {
         "status": "identified",
-        "primary_layer": "agent_perception_or_feedback_design",
-        "claim": "Oracle perception passes while the normal condition fails under the same model and tools.",
+        "primary_layer": "executor_or_cad_interface",
+        "claim": "Exact GT execution fails, so model-level attribution is not valid.",
         "missing_conditions": [],
     }
 
@@ -694,6 +712,22 @@ def _numbers(value: Any) -> list[float]:
     return []
 
 
+def _trajectory_numeric_literals(trajectory: dict[str, Any]) -> list[float]:
+    numbers = _numbers(trajectory["feature_dag"]["nodes"])
+    for row in trajectory.get("static_assignments", []):
+        try:
+            expression = ast.parse(row["expression"], mode="eval")
+        except (SyntaxError, TypeError):
+            continue
+        numbers.extend(
+            float(node.value) for node in ast.walk(expression)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, (int, float))
+            and not isinstance(node.value, bool)
+        )
+    return numbers
+
+
 def observational_trace_diagnostics(
     result: dict[str, Any] | None,
     trajectory: dict[str, Any],
@@ -731,7 +765,9 @@ def observational_trace_diagnostics(
                 if rubric.get("status") != "passed"
             ]
     gt_nodes = trajectory["feature_dag"]["nodes"]
-    gt_numbers = sorted(set(round(number, 12) for number in _numbers(gt_nodes)))
+    gt_numbers = sorted(set(
+        round(number, 12) for number in _trajectory_numeric_literals(trajectory)
+    ))
     agent_numbers = sorted(set(
         round(number, 12)
         for node in operation_nodes for number in _numbers(node.get("parameters", {}))
@@ -877,6 +913,8 @@ def build_attribution_report(
             "missing_conditions": attribution.get("missing_conditions", []),
             "control_mismatches": control_check["mismatches"],
         }
+    attribution["evidence_grade"] = "single_replicate_diagnostic"
+    attribution["population_causal_claim_valid"] = False
     report = {
         "schema_version": "1.0",
         "protocol": ATTRIBUTION_PROTOCOL,

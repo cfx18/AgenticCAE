@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "protocol": "evocad-trajectory-attribution-v1",
+  "date": "2026-09-04",
+  "source_commit": "c98685d",
+  "sample_id": "ortho2cad:00186338",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "medium",
+  "controls": {
+    "max_iterations_safety": 14,
+    "job_time_budget_seconds": 4200,
+    "surface_samples": 20000,
+    "voxel_resolution": 64,
+    "agent_loop_protocol": "evocad-agent-loop-v3"
+  },
+  "ground_truth": {
+    "step_sha256": "ccedd7fdafef5bc2246109f40f85bd5cddf21a9068ca638a32e094c681696e2b",
+    "code_sha256": "e3bee151b43fffde68571655dc9954991a6088f20173a091f24a4916cbd6eccd",
+    "self_score": 100.0,
+    "feature_nodes": 7,
+    "extrusions": 4,
+    "unions": 3,
+    "checkpoints": 4
+  },
+  "conditions": {
+    "normal": {
+      "campaign": "agent-geometry-lineage-pilot-sol-v2-recovery1",
+      "result_sha256": "48f0d4cc22b99e4bd01f31b9c0f25acc62ba759d94bfbb2f7d0e0c6799349b12",
+      "first_score": 41.85,
+      "selected_score": 99.25,
+      "strict_pass": false,
+      "attempts": 14,
+      "selected_attempt_id": "a013",
+      "stop_reason": "max_iterations",
+      "agent_requested_continue": true
+    },
+    "perception": {
+      "campaign": "agent-geometry-gt-oracle-perception-sol-r1",
+      "campaign_manifest_file_sha256": "7356263eeed4d02c18c8d166f59c5a4adb2d1eef37148121c1f8a19add4b9161",
+      "result_sha256": "995ad78253170e7410b7f941438259b4d68bb9b530086e244352bab3323dabf6",
+      "candidate_sha256": "01cb4b404c5b47515da162158f66e72484cab7bb867930f9fdeafc6b5ca4d107",
+      "score": 100.0,
+      "strict_pass": true,
+      "attempts": 1,
+      "elapsed_seconds": 197.411,
+      "metrics": {
+        "voxel_iou": 0.999108,
+        "normalized_chamfer": 0.002941,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000006,
+        "surface_area_relative_error": 0.000005
+      }
+    },
+    "plan": {
+      "campaign": "agent-geometry-gt-oracle-plan-sol-r1",
+      "campaign_manifest_file_sha256": "dde5339ac297f46ad6bab616d4fcdd1dbc5a740c952f55ec28c8734c4247c760",
+      "result_sha256": "3cc0aaf1a96a2a5dca2e39824fe98306988531d5dfbf68091d7b4fce664fbabc",
+      "candidate_sha256": "d13a63e271f51935a3b97148abfcf6f2c51fb71a27a7469879f5d5660a966a0e",
+      "score": 100.0,
+      "strict_pass": true,
+      "attempts": 1,
+      "elapsed_seconds": 232.089,
+      "metrics": {
+        "voxel_iou": 0.999108,
+        "normalized_chamfer": 0.002947,
+        "bbox_relative_error": 0.0,
+        "volume_relative_error": 0.000006,
+        "surface_area_relative_error": 0.000005
+      }
+    },
+    "executor": {
+      "status": "unavailable",
+      "missing_dependency": "cadquery",
+      "interpretation": "Missing counterfactual, not an execution failure"
+    }
+  },
+  "diagnostic_attribution": {
+    "primary_layer": "agent_perception_or_feedback_design",
+    "reason": "The unordered exact feature inventory passed under the same model and tools while the normal condition failed.",
+    "evidence_grade": "single_replicate_diagnostic",
+    "population_causal_claim_valid": false
+  },
+  "notes": [
+    "Oracle runs are evaluation-only interventions and are excluded from normal benchmark accuracy.",
+    "The plan intervention is not required for the earliest paired contrast, but independently confirms exact-plan execution capability.",
+    "At least three paired stochastic replicates are required before estimating a causal failure rate."
+  ]
+}

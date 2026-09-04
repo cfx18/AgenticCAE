@@ -122,8 +122,8 @@ def test_unavailable_executor_is_a_missing_counterfactual() -> None:
     result = gt_trajectory.infer_failure_attribution(
         {
             "normal": {"passed": False},
-            "perception": {"passed": True},
-            "plan": {"passed": True},
+            "perception": {"passed": False},
+            "plan": {"passed": False},
             "executor": {"passed": None, "status": "unavailable"},
         },
         {"passed": True},
