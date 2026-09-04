@@ -111,6 +111,32 @@ def stage_human_feedback(
     return destination
 
 
+def stage_oracle_context(
+    source: Path | None, sample_id: str, job_dir: Path,
+) -> Path | None:
+    """Stage an explicit evaluator intervention separately from normal inputs."""
+    if source is None:
+        return None
+    source = source.resolve()
+    value = json.loads(source.read_text(encoding="utf-8"))
+    from .gt_trajectory import validate_oracle_packet
+
+    validate_oracle_packet(value, sample_id, str(value.get("oracle_level")))
+    destination = job_dir / "oracle-context.json"
+    shutil.copy2(source, destination)
+    task_path = job_dir / "task.json"
+    task = json.loads(task_path.read_text(encoding="utf-8"))
+    task["oracle_context"] = {
+        "path": destination.relative_to(job_dir).as_posix(),
+        "level": value["oracle_level"],
+        "evaluation_only_intervention": True,
+    }
+    task_path.write_text(
+        json.dumps(task, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+    return destination
+
+
 def geometry_verdict(result: dict[str, Any], sample_id: str) -> dict[str, Any]:
     checks = result["checks"]
     metrics = result["metrics"]
@@ -199,6 +225,7 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/geometry_features.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
+        workspace / "src/cad_evoloop/evaluation/gt_trajectory.py",
         workspace / "src/cad_evoloop/evaluation/geometry_score.py",
         workspace / "src/cad_evoloop/evaluation/geometry_split.py",
         workspace / "src/cad_evoloop/verification/export_core_console.py",
@@ -207,6 +234,7 @@ def _source_paths(workspace: Path) -> list[Path]:
         workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
         workspace / "evals/geometry-benchmarks/agent-loop-v3.json",
         workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
+        workspace / "evals/geometry-benchmarks/gt-attribution-v1.json",
         workspace / "src/cad_evoloop/evaluation/schemas/geometry-agent-decision.schema.json",
         workspace / "evals/geometry-benchmarks/protocol-v2.json",
     ]
@@ -224,6 +252,7 @@ def _prompt(
     latest_verdict: Path | None = None,
     reflection: Path | None = None,
     human_feedback: Path | None = None,
+    oracle_context: Path | None = None,
 ) -> str:
     skill_path = project_root() / ".agents/skills/autocad-image-modeling/SKILL.md"
     prompt = Template(template_path.read_text(encoding="utf-8")).substitute(
@@ -254,6 +283,19 @@ def _prompt(
             "BEGIN HUMAN FEEDBACK JSON\n"
             f"{embedded_feedback}\n"
             "END HUMAN FEEDBACK JSON"
+        )
+    if oracle_context is not None:
+        oracle_value = json.loads(oracle_context.read_text(encoding="utf-8"))
+        embedded_oracle = json.dumps(oracle_value, indent=2, ensure_ascii=False)
+        prompt += (
+            "\n\nEVALUATOR ORACLE INTERVENTION\n"
+            "This campaign explicitly tests the causal effect of supplying ground-truth-derived "
+            "information. Use only the packet below; do not inspect evaluator files, parent "
+            "directories, or executable ground-truth code. This run must be reported as an oracle "
+            "condition and must never be pooled with normal reconstruction accuracy.\n"
+            "BEGIN ORACLE CONTEXT JSON\n"
+            f"{embedded_oracle}\n"
+            "END ORACLE CONTEXT JSON"
         )
     return prompt
 
@@ -810,6 +852,7 @@ def _execute_geometry_action_and_verifier(
     run_id: str,
     images: list[Path],
     staged_human_feedback: Path | None,
+    staged_oracle_context: Path | None,
     ground_truth: Path,
     prompt_root: Path,
     previous_candidate: Path | None,
@@ -853,6 +896,7 @@ def _execute_geometry_action_and_verifier(
             candidate=candidate, previous_candidate=previous_candidate or latest_candidate,
             verdict=previous_verdict, latest_verdict=latest_verdict,
             reflection=previous_reflection, human_feedback=staged_human_feedback,
+            oracle_context=staged_oracle_context,
         )
         command = (
             codex_command(
@@ -987,6 +1031,7 @@ def run_geometry_job(
     voxel_resolution: int,
     split_path: Path | None = None,
     human_feedback: Path | None = None,
+    oracle_context: Path | None = None,
 ) -> dict[str, Any]:
     workspace = project_root()
     eval_root = workspace / "evals/geometry-benchmarks"
@@ -1017,11 +1062,18 @@ def run_geometry_job(
         staged_human_feedback = stage_human_feedback(
             human_feedback, sample["sample_id"], job_dir,
         )
+        staged_oracle_context = stage_oracle_context(
+            oracle_context, sample["sample_id"], job_dir,
+        )
     else:
         images = sorted((job_dir / "input_files").glob("input-*"))
         staged_human_feedback = (
             job_dir / "human-feedback.json"
             if (job_dir / "human-feedback.json").is_file() else None
+        )
+        staged_oracle_context = (
+            job_dir / "oracle-context.json"
+            if (job_dir / "oracle-context.json").is_file() else None
         )
     ground_truth = _safe_manifest_path(manifest_path.parent, sample["ground_truth_step"])
     retry_suffix = f"-retry-{retry_number:03d}" if retry_number else ""
@@ -1049,6 +1101,7 @@ def run_geometry_job(
             input_paths=[
                 job_dir / "task.json", *images,
                 *([staged_human_feedback] if staged_human_feedback else []),
+                *([staged_oracle_context] if staged_oracle_context else []),
                 *([split_path] if split_path else []),
             ],
         )
@@ -1158,7 +1211,8 @@ def run_geometry_job(
                 job_dir=job_dir, run_dir=run_dir, ledger=ledger,
                 attempt_id=attempt_id, attempt_dir=attempt_dir, number=number,
                 run_id=run_id, images=images,
-                staged_human_feedback=staged_human_feedback, ground_truth=ground_truth,
+                staged_human_feedback=staged_human_feedback,
+                staged_oracle_context=staged_oracle_context, ground_truth=ground_truth,
                 prompt_root=prompt_root, previous_candidate=previous_candidate,
                 previous_verdict=previous_verdict, latest_candidate=latest_candidate,
                 latest_verdict=latest_verdict, previous_reflection=previous_reflection,

@@ -40,6 +40,10 @@ from cad_evoloop.paths import project_root
 AGENT_GEOMETRY_PROTOCOL = "evocad-agent-geometry-v1"
 AGENT_CONDITION = "durable-kernel-boolean-lineage-v4"
 HUMAN_FEEDBACK_CONDITION = "durable-kernel-human-feedback-checkpoint-v2"
+ORACLE_CONDITIONS = {
+    "perception": "durable-kernel-gt-oracle-perception-v1",
+    "plan": "durable-kernel-gt-oracle-plan-v1",
+}
 GEOMETRY_WORK_UNIT_MAX_ATTEMPTS = 2
 GEOMETRY_DISTRIBUTIONS = ("cadquery-ocp", "numpy", "scipy", "trimesh")
 
@@ -75,6 +79,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "src/cad_evoloop/evaluation/agent_geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/detached_campaign.py",
         workspace / "src/cad_evoloop/evaluation/review_feedback.py",
+        workspace / "src/cad_evoloop/evaluation/gt_trajectory.py",
         workspace / "src/cad_evoloop/backends/autocad/topology.py",
         workspace / "src/cad_evoloop/backends/autocad/core_console.py",
         workspace / "src/cad_evoloop/backends/autocad/audited.py",
@@ -86,6 +91,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
         workspace / "evals/geometry-benchmarks/prompts/repair.md",
         workspace / "evals/geometry-benchmarks/prompts/adjudicate.md",
         workspace / "evals/geometry-benchmarks/human-feedback-v1.json",
+        workspace / "evals/geometry-benchmarks/gt-attribution-v1.json",
     ])
     return {
         path.relative_to(workspace).as_posix(): sha256_file(path)
@@ -160,6 +166,7 @@ def build_agent_campaign_manifest(
     runtime_environment: dict[str, Any],
     effective_sample_ids: list[str] | None = None,
     human_feedback_binding: dict[str, Any] | None = None,
+    oracle_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workspace = project_root()
     effective_sample_ids = effective_sample_ids or selection["sample_ids"]
@@ -167,6 +174,7 @@ def build_agent_campaign_manifest(
         "schema_version": "1.0",
         "protocol": AGENT_GEOMETRY_PROTOCOL,
         "agent_condition": (
+            ORACLE_CONDITIONS[oracle_binding["level"]] if oracle_binding else
             HUMAN_FEEDBACK_CONDITION if human_feedback_binding else AGENT_CONDITION
         ),
         "campaign_id": campaign,
@@ -205,6 +213,8 @@ def build_agent_campaign_manifest(
     }
     if human_feedback_binding is not None:
         value["human_feedback"] = human_feedback_binding
+    if oracle_binding is not None:
+        value["oracle_context"] = oracle_binding
     value["campaign_manifest_sha256"] = _canonical_hash(value, "campaign_manifest_sha256")
     return value
 
@@ -224,6 +234,8 @@ def _create_sample_project(
     model: str,
     sample_feedback: dict[str, Any] | None = None,
     sample_feedback_path: Path | None = None,
+    sample_oracle: dict[str, Any] | None = None,
+    sample_oracle_path: Path | None = None,
 ) -> ProjectStore:
     project_id = slug(sample["sample_id"])
     project_dir = projects_root / project_id
@@ -238,6 +250,7 @@ def _create_sample_project(
             "sample_id": sample["sample_id"],
             "model": model,
             "agent_condition": (
+                ORACLE_CONDITIONS[sample_oracle["oracle_level"]] if sample_oracle else
                 HUMAN_FEEDBACK_CONDITION if sample_feedback else AGENT_CONDITION
             ),
         },
@@ -270,9 +283,29 @@ def _create_sample_project(
             actor="campaign",
         )
         input_ids.append(feedback_id)
+    oracle_id = None
+    if sample_oracle is not None:
+        if sample_oracle_path is None:
+            raise ValueError("Sample oracle path is required for an oracle intervention")
+        oracle_id = "evaluator-oracle"
+        store.register_artifact(
+            sample_oracle_path,
+            artifact_id=oracle_id,
+            kind="evaluator_oracle",
+            metadata={
+                "sample_id": sample["sample_id"],
+                "oracle_level": sample_oracle["oracle_level"],
+                "visible_to_agent": True,
+                "evaluation_only_intervention": True,
+            },
+            actor="campaign",
+        )
+        input_ids.append(oracle_id)
     requirements = [ArtifactRequirement("design_evidence", len(sample["input_images"]))]
     if feedback_id:
         requirements.append(ArtifactRequirement("human_feedback"))
+    if oracle_id:
+        requirements.append(ArtifactRequirement("evaluator_oracle"))
     contract = StageContract(
         contract_id="geometry-strict-gate-v1",
         stage="geometry",
@@ -305,7 +338,7 @@ def _create_sample_project(
         kind="geometry_campaign",
         phase="geometry",
         title="Geometry reconstruction",
-        description="Run the feedback-bound Codex and AutoCAD reconstruction loop",
+        description="Run the evidence-bound Codex and AutoCAD reconstruction loop",
         acceptance_criteria=("Strict geometry contract passes",),
         contract_id=contract.contract_id,
         input_artifact_ids=tuple(input_ids),
@@ -318,13 +351,17 @@ def _create_sample_project(
     work_units.append(unit)
     apply_plan(store, EngineeringPlan(
         plan_id=(
-            "geometry-agent-plan-human-feedback-v1"
-            if sample_feedback else "geometry-agent-plan-v1"
+            f"geometry-agent-plan-gt-oracle-{sample_oracle['oracle_level']}-v1"
+            if sample_oracle else
+            "geometry-agent-plan-human-feedback-v1" if sample_feedback else
+            "geometry-agent-plan-v1"
         ),
         objective="Produce one native editable solid that strict-matches evaluator geometry",
         work_units=tuple(work_units),
         contracts=(contract,),
         rationale=(
+            "Hash-bound GT oracle intervention for causal failure attribution"
+            if sample_oracle else
             "Hash-bound human review feedback with a clarification gate"
             if sample_feedback else
             "Semantic-parity bridge from the recorded v2 loop into the durable kernel"
@@ -351,9 +388,15 @@ def run_agent_geometry_campaign(
     dry_run: bool = False,
     human_feedback: str | Path | None = None,
     feedback_only: bool = False,
+    oracle_context: str | Path | None = None,
+    oracle_level: str | None = None,
 ) -> dict[str, Any]:
     if max_jobs is not None and max_jobs < 1:
         raise ValueError("max_jobs must be positive")
+    if bool(oracle_context) != bool(oracle_level):
+        raise ValueError("oracle_context and oracle_level must be provided together")
+    if oracle_context and human_feedback:
+        raise ValueError("Oracle and human-feedback interventions must run in separate campaigns")
     runtime_environment = collect_runtime_environment(executable)
     if not dry_run:
         require_geometry_environment(runtime_environment)
@@ -365,6 +408,37 @@ def run_agent_geometry_campaign(
     missing = [sample_id for sample_id in selection_value["sample_ids"] if sample_id not in by_id]
     if missing:
         raise ValueError(f"Frozen selection references missing samples: {missing}")
+    oracle_path = None
+    oracle_value = None
+    oracle_binding = None
+    if oracle_context is not None:
+        from cad_evoloop.evaluation.gt_trajectory import (
+            ORACLE_LEVELS,
+            load_oracle_context,
+            validate_oracle_packet,
+        )
+
+        if oracle_level not in ORACLE_LEVELS:
+            raise ValueError(f"Unsupported oracle level: {oracle_level}")
+        oracle_path, oracle_value = load_oracle_context(oracle_context)
+        if oracle_value["source_manifest_sha256"] != sha256_file(manifest_path):
+            raise ValueError("Oracle context was produced for a different geometry manifest")
+        missing_oracles = set(selection_value["sample_ids"]) - set(oracle_value["samples"])
+        if missing_oracles:
+            raise ValueError(f"Oracle context is missing selected samples: {sorted(missing_oracles)}")
+        for sample_id in selection_value["sample_ids"]:
+            validate_oracle_packet(
+                oracle_value["samples"][sample_id][str(oracle_level)],
+                sample_id,
+                str(oracle_level),
+            )
+        oracle_binding = {
+            "path": oracle_path.relative_to(project_root()).as_posix(),
+            "sha256": sha256_file(oracle_path),
+            "oracle_manifest_sha256": oracle_value["oracle_manifest_sha256"],
+            "level": oracle_level,
+            "evaluation_only_intervention": True,
+        }
     feedback_path = None
     feedback_value = None
     feedback_binding = None
@@ -429,6 +503,7 @@ def run_agent_geometry_campaign(
         runtime_environment=runtime_environment,
         effective_sample_ids=effective_sample_ids,
         human_feedback_binding=feedback_binding,
+        oracle_binding=oracle_binding,
     )
     campaign_manifest_path = campaign_dir / "agent-campaign-manifest.json"
     if campaign_manifest_path.is_file():
@@ -443,6 +518,7 @@ def run_agent_geometry_campaign(
                 "sample_id": sample_id,
                 "project_id": slug(sample_id),
                 "model": model,
+                **({"oracle_level": oracle_level} if oracle_level else {}),
                 **({
                     "feedback_route": feedback_value["samples"][sample_id]["route"],
                 } if feedback_value and sample_id in feedback_value["samples"] else {}),
@@ -478,6 +554,7 @@ def run_agent_geometry_campaign(
     )
     scheduled_this_run = 0
     feedback_dir = campaign_dir / "human-feedback"
+    oracle_dir = campaign_dir / "oracle-context"
     for sample_id in effective_sample_ids:
         if sample_id in completed:
             continue
@@ -495,6 +572,13 @@ def run_agent_geometry_campaign(
             feedback_dir.mkdir(exist_ok=True)
             sample_feedback_path = feedback_dir / f"{slug(sample_id)}.json"
             _write_json_atomic(sample_feedback_path, sample_feedback)
+        sample_oracle = None
+        sample_oracle_path = None
+        if oracle_value is not None:
+            sample_oracle = oracle_value["samples"][sample_id][str(oracle_level)]
+            oracle_dir.mkdir(exist_ok=True)
+            sample_oracle_path = oracle_dir / f"{slug(sample_id)}-{oracle_level}.json"
+            _write_json_atomic(sample_oracle_path, sample_oracle)
         store = _create_sample_project(
             projects_root=projects_root,
             campaign=campaign,
@@ -503,6 +587,8 @@ def run_agent_geometry_campaign(
             model=model,
             sample_feedback=sample_feedback,
             sample_feedback_path=sample_feedback_path,
+            sample_oracle=sample_oracle,
+            sample_oracle_path=sample_oracle_path,
         )
         kernel = ProjectKernel(
             store,

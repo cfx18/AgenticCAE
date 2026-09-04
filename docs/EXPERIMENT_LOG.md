@@ -454,3 +454,28 @@ Artifacts:
 The report pipeline was also corrected to persist normalized `results.json`,
 accept either a raw campaign or report snapshot as a baseline, and label paired
 campaigns generically instead of hard-coding a 30-sample native-feedback name.
+
+### GT trajectory attribution harness
+
+Normal failure trajectories were judged insufficient to distinguish Agent design
+from base-model capability: they show the realized policy failing, but both factors
+are changed together. Protocol `evocad-trajectory-attribution-v1` now preregisters a
+paired oracle ladder on a fixed sample/model/tool/verifier/budget configuration:
+normal, exact unordered feature inventory, exact ordered feature DAG, and direct GT
+execution. Oracle campaigns are hash-bound, marked as evaluation-only interventions,
+and excluded from normal accuracy.
+
+The static AST extractor was validated on all 40 local Ortho2CAD programs without
+executing dataset code. It recovered 132 feature nodes: 86 extrusions, 27 unions,
+and 19 cuts. For `ortho2cad:00186338`, it recovered four extrusion features, three
+unions, and four final-solid checkpoints. The GT STEP scores `100.0` against itself
+under the frozen strict verifier, ruling out final-artifact self-inconsistency for
+this case. Executable CadQuery replay is currently recorded as unavailable because
+the workspace runtime provides OCP but not the `cadquery` wrapper; this is treated as
+a missing counterfactual, not as an execution failure.
+
+Current normal-run attribution remains `not_identified`: the `99.25` recovery trace
+is available, while perception, plan, and executable-replay counterfactuals have not
+yet all completed. Generated local artifacts are under
+`reports/generated/gt-attribution-00186338/` and the method is documented in
+`docs/GT_TRAJECTORY_ATTRIBUTION.md`.

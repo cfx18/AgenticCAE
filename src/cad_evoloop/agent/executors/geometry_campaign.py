@@ -69,6 +69,14 @@ class GeometryCampaignExecutor:
             self.store.project_dir / feedback_artifact["uri"]
             if feedback_artifact else None
         )
+        oracle_artifact = next((
+            artifact for artifact in context.project_state["artifacts"].values()
+            if artifact["kind"] == "evaluator_oracle"
+            and artifact["artifact_id"] in context.unit["input_artifact_ids"]
+        ), None)
+        oracle_context = (
+            self.store.project_dir / oracle_artifact["uri"] if oracle_artifact else None
+        )
         result = self.runner(
             manifest_path=self.manifest_path,
             sample=self.samples[sample_id],
@@ -84,11 +92,13 @@ class GeometryCampaignExecutor:
             voxel_resolution=self.config.voxel_resolution,
             split_path=self.config.split_path,
             human_feedback=human_feedback,
+            oracle_context=oracle_context,
         )
         job_dir = Path(result["job_dir"])
         parent_ids = tuple(dict.fromkeys([
             *context.unit["input_artifact_ids"],
             *([feedback_artifact["artifact_id"]] if feedback_artifact else []),
+            *([oracle_artifact["artifact_id"]] if oracle_artifact else []),
         ]))
         registered = []
         files = [

@@ -24,6 +24,11 @@ from .evaluation.geometry_feature_backfill import backfill_geometry_features
 from .evaluation.geometry_feature_report import generate_feature_backfill_report
 from .evaluation.agent_geometry_report import generate_agent_geometry_report
 from .evaluation.geometry_split import write_geometry_split
+from .evaluation.gt_trajectory import (
+    build_attribution_report,
+    extract_manifest_trajectories,
+    replay_gt_trajectory,
+)
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
 from .evaluation.review_feedback import (
     ingest_human_reviews,
@@ -282,6 +287,8 @@ def _batch_agent_geometry() -> None:
     parser.add_argument("--max-jobs", type=int)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--human-feedback", type=Path)
+    parser.add_argument("--oracle-context", type=Path)
+    parser.add_argument("--oracle-level", choices=("perception", "plan"))
     parser.add_argument(
         "--feedback-only", action="store_true",
         help="schedule only actionable samples in the bound human feedback manifest",
@@ -303,6 +310,8 @@ def _batch_agent_geometry() -> None:
         dry_run=args.dry_run,
         human_feedback=args.human_feedback,
         feedback_only=args.feedback_only,
+        oracle_context=args.oracle_context,
+        oracle_level=args.oracle_level,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -322,6 +331,8 @@ def _start_agent_geometry() -> None:
     parser.add_argument("--voxel-resolution", type=int, default=64)
     parser.add_argument("--max-jobs", type=int)
     parser.add_argument("--human-feedback", type=Path)
+    parser.add_argument("--oracle-context", type=Path)
+    parser.add_argument("--oracle-level", choices=("perception", "plan"))
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args()
     command = [
@@ -339,6 +350,10 @@ def _start_agent_geometry() -> None:
         command.extend(("--max-jobs", str(args.max_jobs)))
     if args.human_feedback:
         command.extend(("--human-feedback", str(args.human_feedback.resolve())))
+    if args.oracle_context:
+        command.extend(("--oracle-context", str(args.oracle_context.resolve())))
+    if args.oracle_level:
+        command.extend(("--oracle-level", args.oracle_level))
     if args.feedback_only:
         command.append("--feedback-only")
     from cad_evoloop.evaluation.detached_campaign import start_detached_campaign
@@ -484,6 +499,70 @@ def _submit_agent_clarification() -> None:
     }, indent=2, ensure_ascii=False))
 
 
+def _extract_gt_trajectories() -> None:
+    parser = argparse.ArgumentParser(
+        description="Statically extract GT feature DAGs and oracle intervention packets",
+    )
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--sample", action="append", dest="samples")
+    args = parser.parse_args()
+    result = extract_manifest_trajectories(
+        args.manifest, args.output, sample_ids=args.samples,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _replay_gt() -> None:
+    parser = argparse.ArgumentParser(description="Replay one GT CadQuery trajectory in isolation")
+    parser.add_argument("source", type=Path)
+    parser.add_argument("ground_truth_step", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--python", type=Path, dest="python_executable")
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--score-samples", type=int, default=4000)
+    parser.add_argument("--voxel-resolution", type=int, default=40)
+    args = parser.parse_args()
+    result = replay_gt_trajectory(
+        args.source, args.ground_truth_step, args.output,
+        python_executable=args.python_executable,
+        timeout=args.timeout,
+        sample_count=args.score_samples,
+        voxel_resolution=args.voxel_resolution,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _report_gt_attribution() -> None:
+    parser = argparse.ArgumentParser(
+        description="Attribute a geometry failure with the preregistered GT oracle ladder",
+    )
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--sample", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--normal-result", type=Path)
+    parser.add_argument("--perception-result", type=Path)
+    parser.add_argument("--plan-result", type=Path)
+    parser.add_argument("--executor-result", type=Path)
+    parser.add_argument("--score-samples", type=int, default=4000)
+    parser.add_argument("--voxel-resolution", type=int, default=40)
+    args = parser.parse_args()
+    result = build_attribution_report(
+        args.manifest, args.sample, args.output,
+        normal_result=args.normal_result,
+        perception_result=args.perception_result,
+        plan_result=args.plan_result,
+        executor_result=args.executor_result,
+        sample_count=args.score_samples,
+        voxel_resolution=args.voxel_resolution,
+    )
+    print(json.dumps({
+        "sample_id": result["sample_id"],
+        "attribution": result["attribution"],
+        "report_sha256": result["report_sha256"],
+    }, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -521,6 +600,13 @@ def main() -> None:
         ),
         "agent-clarification-submit": (
             _submit_agent_clarification, "resume a project with human clarification",
+        ),
+        "gt-trajectory-extract": (
+            _extract_gt_trajectories, "extract GT feature DAGs and oracle packets",
+        ),
+        "gt-trajectory-replay": (_replay_gt, "replay one GT CadQuery trajectory"),
+        "gt-attribution-report": (
+            _report_gt_attribution, "attribute failures with GT oracle interventions",
         ),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:
