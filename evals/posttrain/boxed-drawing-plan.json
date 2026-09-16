@@ -1,0 +1,22 @@
+{
+  "protocol": "boxed-minimal-v1",
+  "description": "New items on the existing sources; not a matched-pair causal ablation. One box, short question, no options or supplied crops.",
+  "assignments": [
+    {"batch": "a", "question_id": "boxed-01", "source_id": "pdf-035", "task_type": "line_role"},
+    {"batch": "a", "question_id": "boxed-02", "source_id": "pdf-035", "task_type": "dimension_attachment"},
+    {"batch": "a", "question_id": "boxed-03", "source_id": "pdf-065", "task_type": "line_role"},
+    {"batch": "a", "question_id": "boxed-04", "source_id": "pdf-065", "task_type": "dimension_chain"},
+    {"batch": "a", "question_id": "boxed-05", "source_id": "pdf-120", "task_type": "line_role"},
+    {"batch": "a", "question_id": "boxed-06", "source_id": "pdf-120", "task_type": "dimension_chain"},
+    {"batch": "a", "question_id": "boxed-07", "source_id": "web-2679-01", "task_type": "dimension_attachment"},
+    {"batch": "a", "question_id": "boxed-08", "source_id": "web-2679-01", "task_type": "dimension_chain"},
+    {"batch": "b", "question_id": "boxed-09", "source_id": "pdf-162", "task_type": "line_role"},
+    {"batch": "b", "question_id": "boxed-10", "source_id": "pdf-162", "task_type": "section_reasoning"},
+    {"batch": "b", "question_id": "boxed-11", "source_id": "pdf-178", "task_type": "dimension_attachment"},
+    {"batch": "b", "question_id": "boxed-12", "source_id": "pdf-178", "task_type": "dimension_chain"},
+    {"batch": "b", "question_id": "boxed-13", "source_id": "pdf-202", "task_type": "line_role"},
+    {"batch": "b", "question_id": "boxed-14", "source_id": "pdf-202", "task_type": "section_reasoning"},
+    {"batch": "b", "question_id": "boxed-15", "source_id": "web-1936-01", "task_type": "line_role"},
+    {"batch": "b", "question_id": "boxed-16", "source_id": "web-1936-01", "task_type": "dimension_attachment"}
+  ]
+}

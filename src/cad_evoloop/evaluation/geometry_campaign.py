@@ -732,8 +732,12 @@ def _run_decision_with_retries(
     job_started: float,
     job_time_budget: int,
     retry_limit: int = DECISION_RETRY_LIMIT,
+    transport: Any = None,
 ) -> dict[str, Any]:
     """Retry feedback transport/schema failures without consuming a CAD attempt."""
+    read_events = transport.read_events if transport else _read_codex_events
+    resume_command = transport.resume_command if transport else codex_resume_command
+    run_process = transport.run_process if transport else _run_codex_process
     traces = []
     event_values = []
     turn_event_paths = []
@@ -749,7 +753,7 @@ def _run_decision_with_retries(
         output_path = turn_dir / "reflection.json"
         turn_events = turn_dir / "events.jsonl"
         turn_stderr = turn_dir / "stderr.log"
-        event_data = _read_codex_events(turn_events)
+        event_data = read_events(turn_events)
         event_values.append(event_data)
         turn_event_paths.append(turn_events)
         turn_stderr_paths.append(turn_stderr)
@@ -809,7 +813,7 @@ def _run_decision_with_retries(
             )
         turn_prompt = prompt + retry_note
         (turn_dir / "prompt.txt").write_text(turn_prompt, encoding="utf-8", newline="\n")
-        command = codex_resume_command(
+        command = resume_command(
             executable,
             model,
             effort,
@@ -820,7 +824,7 @@ def _run_decision_with_retries(
             with_autocad=False,
             output_schema=output_schema,
         )
-        return_code, timed_out = _run_codex_process(
+        return_code, timed_out = run_process(
             command,
             cwd=job_dir,
             events_path=turn_events,
@@ -828,7 +832,7 @@ def _run_decision_with_retries(
             timeout=remaining_attempt_timeout(turn_timeout, remaining),
             stdin_text=turn_prompt,
         )
-        event_data = _read_codex_events(turn_events)
+        event_data = read_events(turn_events)
         event_values.append(event_data)
         turn_event_paths.append(turn_events)
         turn_stderr_paths.append(turn_stderr)
@@ -907,11 +911,12 @@ def _run_decision_with_retries(
 
 
 def _archive_interrupted_action(
-    attempt_dir: Path, candidate: Path | None = None,
+    attempt_dir: Path, candidate: Path | None = None, event_prefix: str = "codex",
 ) -> Path | None:
     names = (
-        "action-prompt.txt", "codex-events.jsonl", "codex-stderr.log",
-        "codex-final.txt", "mcp-audit.jsonl",
+        "action-prompt.txt", f"{event_prefix}-events.jsonl", f"{event_prefix}-stderr.log",
+        f"{event_prefix}-final.txt", "mcp-audit.jsonl",
+        f"{event_prefix}-events.transport.json", "kimi-request.json", "kimi-mcp-config.json",
     )
     existing = [attempt_dir / name for name in names if (attempt_dir / name).is_file()]
     if candidate is not None and candidate.is_file():
@@ -966,26 +971,32 @@ def _execute_geometry_action_and_verifier(
     recovering_action: bool,
     resumed_action: dict[str, Any] | None,
     action_checkpoint: Callable[[dict[str, Any]], None],
+    transport: Any = None,
 ) -> dict[str, Any]:
+    event_prefix = transport.event_prefix if transport else "codex"
+    read_events = transport.read_events if transport else _read_codex_events
+    start_command = transport.start_command if transport else codex_command
+    resume_command = transport.resume_command if transport else codex_resume_command
+    run_process = transport.run_process if transport else _run_codex_process
     candidate = job_dir / f"candidate.{attempt_id}.dwg"
     candidate_stl = attempt_dir / "candidate.stl"
     candidate_topology = attempt_dir / "candidate-topology.json"
     face_query_input = attempt_dir / "face-query.tsv"
     face_query_output = attempt_dir / "face-query.json"
     verdict_path = attempt_dir / "geometry-verdict.json"
-    events_path = attempt_dir / "codex-events.jsonl"
-    stderr_path = attempt_dir / "codex-stderr.log"
-    final_path = attempt_dir / "codex-final.txt"
+    events_path = attempt_dir / f"{event_prefix}-events.jsonl"
+    stderr_path = attempt_dir / f"{event_prefix}-stderr.log"
+    final_path = attempt_dir / f"{event_prefix}-final.txt"
     action_prompt_path = attempt_dir / "action-prompt.txt"
     audit_path = attempt_dir / "mcp-audit.jsonl"
     if resumed_action is not None:
-        action_event_data = _read_codex_events(events_path)
+        action_event_data = read_events(events_path)
         thread_id = resumed_action.get("thread_id") or thread_id or action_event_data.get("thread_id")
         return_code = resumed_action.get("return_code")
         action_timed_out = bool(resumed_action.get("action_timed_out"))
     else:
         if recovering_action:
-            _archive_interrupted_action(attempt_dir, candidate)
+            _archive_interrupted_action(attempt_dir, candidate, event_prefix)
         prompt = _prompt(
             prompt_root / (
                 "modeling-ir.md" if reconstruction_ir is not None and (
@@ -1003,11 +1014,11 @@ def _execute_geometry_action_and_verifier(
             reconstruction_mode=reconstruction_mode,
         )
         command = (
-            codex_command(
+            start_command(
                 executable, model, effort, agent_cwd, images, prompt, audit_path, final_path,
             )
             if thread_id is None else
-            codex_resume_command(
+            resume_command(
                 executable, model, effort, agent_cwd, thread_id, prompt,
                 final_path, with_autocad=True, audit_path=audit_path,
             )
@@ -1018,16 +1029,19 @@ def _execute_geometry_action_and_verifier(
         attempt_timeout = remaining_attempt_timeout(
             timeout, job_time_budget - (time.perf_counter() - job_started) - feedback_reserve,
         )
-        return_code, action_timed_out = _run_codex_process(
+        return_code, action_timed_out = run_process(
             command, cwd=agent_cwd, events_path=events_path, stderr_path=stderr_path,
             timeout=attempt_timeout, stdin_text=prompt,
         )
-        action_event_data = _read_codex_events(events_path)
+        action_event_data = read_events(events_path)
         thread_id = thread_id or action_event_data.get("thread_id")
         for path, role in (
-            (action_prompt_path, "codex-prompt"), (events_path, "codex-events"),
-            (stderr_path, "codex-stderr"), (final_path, "codex-final"),
+            (action_prompt_path, f"{event_prefix}-prompt"), (events_path, f"{event_prefix}-events"),
+            (stderr_path, f"{event_prefix}-stderr"), (final_path, f"{event_prefix}-final"),
             (audit_path, "mcp-audit"),
+            (events_path.with_suffix(".transport.json"), "transport-metadata"),
+            (attempt_dir / "kimi-request.json", "transport-request"),
+            (attempt_dir / "kimi-mcp-config.json", "transport-mcp-config"),
         ):
             if path.is_file():
                 ledger.add_artifact(run_dir, attempt_id, path, role=role)
@@ -1039,7 +1053,7 @@ def _execute_geometry_action_and_verifier(
 
     if not candidate.is_file():
         verdict = failed_geometry_verdict(
-            sample["sample_id"], "Codex agent did not create the requested candidate DWG",
+            sample["sample_id"], "The agent did not create the requested candidate DWG",
             "agent-output-missing",
         )
     else:
@@ -1137,7 +1151,12 @@ def run_geometry_job(
     human_feedback: Path | None = None,
     oracle_context: Path | None = None,
     reconstruction_mode: str = "baseline",
+    transport: Any = None,
 ) -> dict[str, Any]:
+    event_prefix = transport.event_prefix if transport else "codex"
+    read_events = transport.read_events if transport else _read_codex_events
+    if transport is not None and reconstruction_mode != "baseline":
+        raise ValueError("Alternate CLI transport currently supports baseline reconstruction only")
     if reconstruction_mode not in IR_MODES:
         raise ValueError(f"Unsupported reconstruction mode: {reconstruction_mode}")
     if reconstruction_mode == "oracle_ir" and oracle_context is None:
@@ -1204,13 +1223,16 @@ def run_geometry_job(
             ledger_sample_id,
             run_id=run_id,
             agent={
-                "system": "codex-cli",
+                "system": transport.name if transport else "codex-cli",
                 "agent_id": "evocad-geometry-batch",
                 "model": model,
                 "reasoning_effort": effort,
                 "external_sample_id": sample["sample_id"],
             },
-            source_paths=_source_paths(workspace),
+            source_paths=[*_source_paths(workspace), *([
+                workspace / "src/cad_evoloop/agent/models/kimi_geometry.py",
+                workspace / "src/cad_evoloop/agent/models/kimi_cli_launcher.mjs",
+            ] if transport else [])],
             input_paths=[
                 job_dir / "task.json", *images,
                 *([staged_human_feedback] if staged_human_feedback else []),
@@ -1367,9 +1389,9 @@ def run_geometry_job(
         verdict_path = attempt_dir / "geometry-verdict.json"
         reflection_path = attempt_dir / "reflection.json"
         feedback_path = attempt_dir / "feedback-packet.json"
-        events_path = attempt_dir / "codex-events.jsonl"
-        stderr_path = attempt_dir / "codex-stderr.log"
-        final_path = attempt_dir / "codex-final.txt"
+        events_path = attempt_dir / f"{event_prefix}-events.jsonl"
+        stderr_path = attempt_dir / f"{event_prefix}-stderr.log"
+        final_path = attempt_dir / f"{event_prefix}-final.txt"
         action_prompt_path = attempt_dir / "action-prompt.txt"
         audit_path = attempt_dir / "mcp-audit.jsonl"
         reflection_events_path = attempt_dir / "reflection-events.jsonl"
@@ -1380,7 +1402,7 @@ def run_geometry_job(
         resumed_verifier = resume_phase == "verifier_completed"
         if resumed_verifier:
             verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-            action_event_data = _read_codex_events(events_path)
+            action_event_data = read_events(events_path)
             thread_id = active_attempt.get("thread_id") or thread_id or action_event_data.get("thread_id")
             return_code = active_attempt.get("return_code")
             action_timed_out = bool(active_attempt.get("action_timed_out"))
@@ -1423,6 +1445,7 @@ def run_geometry_job(
                     active_attempt if active_attempt.get("phase") == "action_completed" else None
                 ),
                 action_checkpoint=persist_action_checkpoint,
+                transport=transport,
             )
             verdict = action["verdict"]
             action_event_data = action["action_event_data"]
@@ -1533,6 +1556,7 @@ def run_geometry_job(
                 turn_timeout=decision_turn_timeout,
                 job_started=job_started,
                 job_time_budget=job_time_budget,
+                transport=transport,
             )
             decision = decision_run["decision"]
             decision_error = decision_run["error"]
@@ -1540,7 +1564,7 @@ def run_geometry_job(
             decision_timed_out = decision_run["timed_out"]
             decision_event_data = decision_run["event_data"]
         else:
-            decision_error = "The action turn did not produce a resumable Codex thread_id"
+            decision_error = "The action turn did not produce a resumable conversation ID"
             decision_run = {
                 "traces": [], "recovered": False, "artifact_paths": [],
             }

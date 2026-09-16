@@ -267,7 +267,7 @@ class HumanReviewStore:
             if (attempt.get("evidence") or {}).get("verdict") else None,
         }
 
-    def append(self, submission: Any) -> dict[str, Any]:
+    def append(self, submission: Any, *, presentation: dict | None = None) -> dict[str, Any]:
         clean = _validate_submission(submission)
         bundle_integrity = self.verify_bundle()
         if not bundle_integrity["ok"]:
@@ -291,6 +291,8 @@ class HumanReviewStore:
                 "binding": binding,
                 **clean,
             }
+            if presentation is not None:
+                record["presentation"] = presentation
             record["record_sha256"] = _canonical_sha256(record)
             with self.reviews_path.open("a", encoding="utf-8", newline="\n") as stream:
                 stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -391,11 +393,13 @@ class _ReviewServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 
-    def __init__(self, address, handler, *, app_dir: Path, bundle_dir: Path, store: HumanReviewStore):
+    def __init__(self, address, handler, *, app_dir: Path, bundle_dir: Path,
+                 store: HumanReviewStore, catalog=None):
         super().__init__(address, handler)
         self.app_dir = app_dir
         self.bundle_dir = bundle_dir
         self.store = store
+        self.catalog = catalog
 
 
 class GeometryReviewHandler(BaseHTTPRequestHandler):
@@ -411,13 +415,15 @@ class GeometryReviewHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def _static(self, path: Path) -> None:
+    def _static(self, path: Path, *, attachment: bool = False) -> None:
         if not path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         payload = path.read_bytes()
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", _static_content_type(path))
+        self.send_header("Content-Type", "application/octet-stream" if attachment else _static_content_type(path))
+        if attachment:
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(path.name))
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -434,13 +440,52 @@ class GeometryReviewHandler(BaseHTTPRequestHandler):
         return candidate
 
     def do_GET(self) -> None:  # noqa: N802
-        path = urllib.parse.urlparse(self.path).path
+        path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path)
         if path == "/api/health":
-            self._json(HTTPStatus.OK, {"ok": True})
+            self._json(HTTPStatus.OK, {"ok": True, "catalog": self.server.catalog is not None})
             return
+        if path == "/api/catalog" and self.server.catalog:
+            self._json(HTTPStatus.OK, self.server.catalog.response())
+            return
+        if path.startswith("/recorded-io/") and self.server.catalog:
+            key, _, relative = path.removeprefix("/recorded-io/").partition("/")
+            archive = self.server.catalog.archives.get(key)
+            if archive is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            try:
+                self._static(archive.file(relative), attachment=True)
+            except KeyError:
+                self.send_error(HTTPStatus.NOT_FOUND)
+            except (ValueError, OSError) as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+            return
+        store = self.server.store
+        if path.startswith(("/api/bundles/", "/bundles/")):
+            prefix = "/api/bundles/" if path.startswith("/api/") else "/bundles/"
+            key, _, relative = path.removeprefix(prefix).partition("/")
+            store = self.server.catalog.stores.get(key) if self.server.catalog else None
+            if store is None:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown review bundle"})
+                return
+            if prefix == "/api/bundles/" and relative == "reviews":
+                path = "/api/reviews"
+            elif prefix == "/bundles/" and relative == "review-data.json":
+                self._static(store.bundle_path)
+                return
+            elif prefix == "/bundles/" and relative.startswith("assets/"):
+                child = self._safe_child(store.bundle_path.parent / "assets", relative[7:])
+                if child is None:
+                    self.send_error(HTTPStatus.BAD_REQUEST)
+                else:
+                    self._static(child)
+                return
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
         if path == "/api/reviews":
             try:
-                self._json(HTTPStatus.OK, self.server.store.response())
+                self._json(HTTPStatus.OK, store.response())
             except ValueError as exc:
                 self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
             return
@@ -462,7 +507,14 @@ class GeometryReviewHandler(BaseHTTPRequestHandler):
             self._static(child)
 
     def do_POST(self) -> None:  # noqa: N802
-        if urllib.parse.urlparse(self.path).path != "/api/reviews":
+        path = urllib.parse.urlparse(self.path).path
+        store = self.server.store
+        if path.startswith("/api/bundles/") and self.server.catalog:
+            key, _, relative = path.removeprefix("/api/bundles/").partition("/")
+            store = self.server.catalog.stores.get(key)
+            if relative == "reviews" and store is not None:
+                path = "/api/reviews"
+        if path != "/api/reviews":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         try:
@@ -474,7 +526,15 @@ class GeometryReviewHandler(BaseHTTPRequestHandler):
             return
         try:
             value = json.loads(self.rfile.read(length))
-            record = self.server.store.append(value)
+            presentation = None
+            if self.server.catalog:
+                if not isinstance(value, dict) or value.get("bundle_sha256") != store.bundle["bundle_sha256"]:
+                    raise ValueError("Review bundle changed; reload before saving")
+                if value.get("presentation_sha256") != self.server.catalog.presentation_sha256:
+                    raise ValueError("Review presentation changed; reload before saving")
+                self.server.catalog.verify_presentation()
+                presentation = self.server.catalog.presentation
+            record = store.append(value, presentation=presentation)
         except (json.JSONDecodeError, ValueError) as exc:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
@@ -491,13 +551,22 @@ def serve_geometry_review(
     app_dir: str | Path,
     host: str = "127.0.0.1",
     port: int = 8766,
+    catalog_path: str | Path | None = None,
 ) -> None:
     bundle_dir = Path(bundle_dir).resolve()
     app_dir = Path(app_dir).resolve()
     store = HumanReviewStore(bundle_dir / "review-data.json", reviews_path)
     if app_dir != (bundle_dir / "app").resolve():
         raise ValueError("The review server must use the frozen app stored inside the bundle")
-    server = _ReviewServer((host, port), GeometryReviewHandler, app_dir=app_dir, bundle_dir=bundle_dir, store=store)
+    catalog = None
+    if catalog_path is not None:
+        from .review_catalog import ReviewCatalog
+        catalog = ReviewCatalog(Path(catalog_path), bundle_dir)
+        if catalog.stores[catalog.default_id].reviews_path != store.reviews_path:
+            raise ValueError("Default review ledger does not match the catalog")
+        app_dir = catalog.app_dir
+    server = _ReviewServer((host, port), GeometryReviewHandler, app_dir=app_dir,
+                           bundle_dir=bundle_dir, store=store, catalog=catalog)
     print(f"Geometry Review Workbench: http://{host}:{port}/")
     print(f"Review ledger: {store.reviews_path}")
     try:

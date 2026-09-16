@@ -1,0 +1,26 @@
+{
+  "pilot_id": "fusion-failure-pilot-v1",
+  "status": "candidate_selection_not_accepted_data",
+  "tasks": [
+    {"id": "line-01", "type": "line_role", "part": "100261_362d7e17_0000", "role": "hidden_edge"},
+    {"id": "line-02", "type": "line_role", "part": "100798_1efa7e4b_0000", "role": "dimension_line"},
+    {"id": "line-03", "type": "line_role", "part": "100804_1147d10b_0000", "role": "extension_line"},
+    {"id": "line-04", "type": "line_role", "part": "101605_59c455b1_0000", "role": "visible_edge"},
+    {"id": "dimension-01", "type": "dimension_attachment", "part": "100622_1c7038f5_0003", "mode": "bore"},
+    {"id": "dimension-02", "type": "dimension_attachment", "part": "100155_bf644f70_0000", "mode": "overall"},
+    {"id": "dimension-03", "type": "dimension_attachment", "part": "101446_95204330_0000", "mode": "overall"},
+    {"id": "views-01", "type": "cross_view", "part": "100893_3ffa90e7_0000"},
+    {"id": "views-02", "type": "cross_view", "part": "101202_01069b8f_0000"},
+    {"id": "views-03", "type": "cross_view", "part": "101289_a540a982_0000"},
+    {"id": "observe-01", "type": "clarification", "part": "100622_1c7038f5_0002"},
+    {"id": "observe-02", "type": "clarification", "part": "101912_aa90e09d_0000"},
+    {"id": "observe-03", "type": "clarification", "part": "102175_699d5e7c_0000"},
+    {"id": "repair-01", "type": "local_repair", "part": "100622_1c7038f5_0003", "mode": "bore"},
+    {"id": "repair-02", "type": "local_repair", "part": "101605_59c455b1_0000", "mode": "depth"},
+    {"id": "repair-03", "type": "local_repair", "part": "100243_9fb796fe_0005", "mode": "length"},
+    {"id": "projection-01", "type": "projection_diagnosis", "part": "100801_d759cc09_0000", "mode": "hidden_line_style"},
+    {"id": "projection-02", "type": "projection_diagnosis", "part": "101446_95204330_0002", "mode": "view_direction"},
+    {"id": "reconstruct-01", "type": "reconstruction", "part": "100622_1c7038f5_0003", "mode": "ring"},
+    {"id": "reconstruct-02", "type": "reconstruction", "part": "100243_9fb796fe_0005", "mode": "box"}
+  ]
+}

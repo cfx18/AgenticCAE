@@ -18,6 +18,7 @@ from cad_evoloop.evaluation.review_feedback import (
     ingest_human_reviews,
     load_human_feedback,
 )
+from cad_evoloop.evaluation.review_catalog import ReviewCatalog
 from cad_evoloop.ledger.ledger import sha256_file
 
 
@@ -285,12 +286,14 @@ def test_geometry_review_frontend_contains_required_review_surfaces() -> None:
     styles = (root / "styles.css").read_text(encoding="utf-8")
     for identifier in (
         "evidencePanel", "verifierPanel", "reflectionPanel", "feedbackPacket", "mcpPanel",
-        "reviewForm",
+        "reviewForm", "harnessFilter", "experimentFilter",
     ):
         assert f'id="{identifier}"' in html
-    assert 'fetch("/api/reviews"' in script
+    assert 'fetch(reviewsUrl()' in script
     assert "supersedes_review_id" in script
-    assert 'src="app.js?v=10"' in html
+    assert 'src="app.js?v=12"' in html
+    assert 'src="benchmark-metrics.js"' in html
+    assert 'id="benchmarkComparison"' in html
     assert "truthViewer" in html and "candidateViewer" in html and "overlayViewer" in html
     assert 'id="localizationRegions"' in html
     viewer = (root / "geometry-viewer.js").read_text(encoding="utf-8")
@@ -362,6 +365,130 @@ def test_geometry_review_server_serves_javascript_with_executable_mime_type(tmp_
         thread.join(timeout=5)
 
 
+@pytest.fixture
+def review_catalog(tmp_path):
+    entries = []
+    for name, harness in (("evo", "EvoCAD"), ("codex", "Codex")):
+        parent = tmp_path / name
+        parent.mkdir()
+        campaign, source, workspace = _campaign(parent)
+        output = workspace / "reports/review"
+        generate_geometry_review_bundle(campaign, output, source_manifest=source)
+        entries.append({
+            "id": name, "harness": harness, "label": name,
+            "bundle": output.relative_to(tmp_path).as_posix(),
+            "reviews": (workspace / "reviews.jsonl").relative_to(tmp_path).as_posix(),
+        })
+    config = tmp_path / "catalog.json"
+    config.write_text(json.dumps({
+        "app_dir": entries[0]["bundle"] + "/app",
+        "presentation_dir": "presentations", "bundles": entries,
+    }), encoding="utf-8")
+    catalog = ReviewCatalog(config, tmp_path / entries[1]["bundle"])
+    return catalog, config
+
+
+@pytest.fixture
+def catalog_server(review_catalog):
+    catalog, config = review_catalog
+    store = catalog.stores[catalog.default_id]
+    server = _ReviewServer(
+        ("127.0.0.1", 0), GeometryReviewHandler,
+        app_dir=catalog.app_dir, bundle_dir=store.bundle_path.parent, store=store, catalog=catalog,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield catalog, f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _http_json(url, payload=None):
+    request = urllib.request.Request(url, data=json.dumps(payload).encode() if payload is not None else None,
+                                     headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.load(response)
+
+
+def test_catalog_routes_unchanged_bundles_assets_and_isolated_reviews(catalog_server):
+    catalog, url = catalog_server
+    evo, codex = catalog.stores["evo"], catalog.stores["codex"]
+    original = evo.append(_submission(next(iter(evo.targets))))
+    old_bytes = evo.reviews_path.read_bytes()
+    listing = _http_json(url + "/api/catalog")
+    assert listing["default_id"] == "codex"
+    assert [entry["harness"] for entry in listing["bundles"]] == ["EvoCAD", "Codex"]
+    for key, store in catalog.stores.items():
+        assert _http_json(url + f"/bundles/{key}/review-data.json") == store.bundle
+        asset = store.bundle["runs"][0]["input_images"][0]
+        with urllib.request.urlopen(url + f"/bundles/{key}/{asset}") as response:
+            assert response.read() == (store.bundle_path.parent / asset).read_bytes()
+    assert _http_json(url + "/data/review-data.json") == codex.bundle
+    assert _http_json(url + "/api/bundles/evo/reviews")["records"] == [original]
+    assert not _http_json(url + "/api/bundles/codex/reviews")["records"]
+    payload = _submission(next(iter(codex.targets))) | {
+        "bundle_sha256": codex.bundle["bundle_sha256"],
+        "presentation_sha256": listing["presentation_sha256"],
+    }
+    record = _http_json(url + "/api/bundles/codex/reviews", payload)
+    assert record["binding"]["bundle_sha256"] == codex.bundle["bundle_sha256"]
+    assert record["presentation"] == catalog.presentation
+    assert evo.reviews_path.read_bytes() == old_bytes
+    assert all(store.verify()["ok"] for store in catalog.stores.values())
+
+
+@pytest.mark.parametrize("field", ["bundle_sha256", "presentation_sha256"])
+def test_catalog_rejects_stale_submission_binding(catalog_server, field):
+    catalog, url = catalog_server
+    store = catalog.stores["codex"]
+    payload = _submission(next(iter(store.targets))) | {
+        "bundle_sha256": store.bundle["bundle_sha256"],
+        "presentation_sha256": catalog.presentation_sha256,
+    }
+    payload[field] = "wrong"
+    with pytest.raises(urllib.error.HTTPError) as error:
+        _http_json(url + "/api/bundles/codex/reviews", payload)
+    assert error.value.code == 400
+    assert not store.records()
+
+
+@pytest.mark.parametrize("path", [
+    "/bundles/unknown/review-data.json", "/api/bundles/unknown/reviews",
+    "/bundles/codex/assets/%2e%2e/review-data.json",
+    "/bundles/codex/assets/..%5c..%5csecret.txt",
+])
+def test_catalog_rejects_unknown_bundles_and_asset_escape(catalog_server, path):
+    _, url = catalog_server
+    with pytest.raises(urllib.error.HTTPError) as error:
+        _http_json(url + path)
+    assert error.value.code in (400, 404)
+
+
+def test_catalog_snapshot_does_not_rewrite_frozen_ui(review_catalog):
+    catalog, config = review_catalog
+    store = catalog.stores["evo"]
+    frozen = store.bundle_path.parent / "app/app.js"
+    original = frozen.read_bytes()
+    (catalog.app_dir / "app.js").write_text("changed", encoding="utf-8")
+    assert frozen.read_bytes() == original
+    assert store.verify()["ok"]
+    with pytest.raises(ValueError, match="presentation artifact"):
+        catalog.verify_presentation()
+
+
+def test_catalog_rejects_reused_ledger(review_catalog):
+    catalog, config = review_catalog
+    value = json.loads(config.read_text(encoding="utf-8"))
+    value["bundles"][1]["reviews"] = value["bundles"][0]["reviews"]
+    config.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ValueError, match="separate review ledgers"):
+        ReviewCatalog(config, catalog.stores["codex"].bundle_path.parent)
+
+
 def test_geometry_review_exports_aligned_interactive_assets(tmp_path, monkeypatch) -> None:
     trimesh = pytest.importorskip("trimesh")
     campaign, source, workspace = _campaign(tmp_path)
@@ -426,3 +553,40 @@ def test_review_export_does_not_reuse_stale_geometry_assets(tmp_path) -> None:
 
     assert not stale.exists()
     assert payload["runs"][0]["attempts"][0]["geometry"]["candidate"] is None
+
+
+def test_ui_refresh_preserves_frozen_evidence_and_records_parent(tmp_path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    original = workspace / "reports/original"
+    payload = generate_geometry_review_bundle(campaign, original, source_manifest=source)
+    before = {p.relative_to(original): sha256_file(p) for p in original.rglob("*") if p.is_file()}
+    refreshed = workspace / "reports/refreshed"
+    result = geometry_review.refresh_geometry_review_app(original, refreshed)
+
+    assert result["runs"] == payload["runs"]
+    assert result["campaign"] == payload["campaign"]
+    assert result["bundle_sha256"] != payload["bundle_sha256"]
+    assert result["display_revision"] == {
+        "parent_bundle_sha256": payload["bundle_sha256"],
+        "kind": "ui-only-refresh", "evidence_recomputed": False, "reviews_migrated": False,
+    }
+    assert before == {p.relative_to(original): sha256_file(p) for p in original.rglob("*") if p.is_file()}
+    assert HumanReviewStore(refreshed / "review-data.json", workspace / "reviews.jsonl").verify()["ok"]
+    for path in (original / "assets").rglob("*"):
+        if path.is_file():
+            assert sha256_file(path) == sha256_file(refreshed / path.relative_to(original))
+    with pytest.raises(FileExistsError):
+        geometry_review.refresh_geometry_review_app(original, refreshed)
+    with pytest.raises(ValueError):
+        geometry_review.refresh_geometry_review_app(original, original / "nested")
+
+
+def test_ui_refresh_rejects_corrupt_source(tmp_path) -> None:
+    campaign, source, workspace = _campaign(tmp_path)
+    original = workspace / "reports/original"
+    generate_geometry_review_bundle(campaign, original, source_manifest=source)
+    (original / "app/app.js").write_text("changed", encoding="utf-8")
+    refreshed = workspace / "reports/refreshed"
+    with pytest.raises(ValueError, match="integrity"):
+        geometry_review.refresh_geometry_review_app(original, refreshed)
+    assert not refreshed.exists()

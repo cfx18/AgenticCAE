@@ -1,5 +1,196 @@
 # EvoCAD Experiment Log
 
+## Native Astra Ultra on OmniMech 4, 2026-09-14
+
+Ran the requested additional sample with native Codex + Astra Ultra and the same
+source-only prompt, HTTPS transport, AutoCAD MCP and geometry-v2 scoring (20k/64).
+Completed normally in 914.472 seconds: **100.0**, strict pass, IoU **0.993030**,
+normalized Chamfer **0.003613**, volume error **0.4666%**. No GT feedback, forced IR,
+external repair or human mirror correction. Agent-disclosed approximations include
+an inferred 28 mm length, smooth nominal M6 openings and minor edge treatments.
+
+Published `direct-astra-4` under Codex in the unified review catalog. Preserved
+four DWG intermediates, source overlays, construction record and public trajectory.
+The post-archive ledger verifies 68 files / 53 events. Historical EvoCAD/Sol medium
+was 99.4 / strict fail / IoU 0.972953; this is not a single-variable comparison.
+
+A post-run topology export unexpectedly rewrote the input DWG. Hash checking
+caught it; the byte-identical scored original was restored from the preserved
+copy, with incident evidence retained. Topology jobs now open an isolated copy;
+the repaired export leaves the original unchanged. No original score was changed.
+32 regression tests passed. Details: `docs/experiments/native-astra-ultra-omnimech4.md`.
+
+## Astra OmniMech 2 Mirror Diagnostic, 2026-09-14
+
+Following the user's mirror hypothesis, rescored the unchanged original and
+three axis-reflected meshes using the unchanged geometry-v2 protocol (20k/64).
+Original score 91.69 / IoU 0.890819 reproduced exactly. Each reflected mesh passed
+strictly at score 100 / IoU 1. A native AutoCAD mirror about WCS `y=32`, followed
+by independent export, also scored 100 / IoU 1 / normalized Chamfer 0.004546.
+Native volume, area and bounds were unchanged; only handedness changed.
+
+This is a human-requested, GT-assisted diagnostic, not an autonomous Astra repair.
+No new model call, verifier modification or original score/review overwrite.
+Separate parent-linked ledger verified 22 files / 20 events. Review catalog entry
+`mirror-astra-2` under Diagnostics contains original and mirror for comparison.
+Details and caveats: `docs/experiments/astra-omnimech2-mirror.md`.
+
+## Native Astra/Sol Ultra on OmniMech 2 and 10, 2026-09-14
+
+Completed the three requested independent native Codex runs with the same CLI,
+HTTPS transport, unchanged source-only prompt, AutoCAD MCP, ultra effort label,
+3,600-second safety cap and held-out geometry-v2 scoring:
+
+- OmniMech 2 / Astra: 91.69, strict fail, IoU 0.890819, 929.209 seconds.
+  Previous native Sol Ultra: 63.34, strict fail, IoU 0.878517.
+- OmniMech 10 / Sol: 100.0, strict pass, IoU 0.999824, 981.899 seconds.
+- OmniMech 10 / Astra: 100.0, strict pass, IoU 0.999824, 705.037 seconds.
+
+All three stopped normally without external repair turns or in-run GT feedback.
+Astra recovered its OmniMech 2 final-save Core Console crash autonomously. Sol
+corrected its OmniMech 10 T-slot and underside-feet interpretation within the run.
+The account remained available; no reset credit or separate paid API was used.
+
+New frozen bundles are registered under Codex as `direct-astra-2`, `direct-sol-10`
+and `direct-astra-10`. Existing `direct` remains the original Sol / OmniMech 2.
+Native CAD intermediates, inspection images, public root/helper trajectories and
+MCP audits are preserved. Post-archive ledgers verify at 61/59/53 files respectively.
+See `docs/experiments/native-ultra-omnimech2-10.md` for configurations, hashes,
+metrics, root usage, review URLs and comparison caveats. These are single-trial
+observations on two parts, not evidence for a general model ranking.
+
+## Unified Harness Review Navigation, 2026-09-14
+
+Added Harness (EvoCAD / Codex) and Experiment selectors to the upper-left review
+browser. The servers on 8770 and 8765 now expose six registered historical views
+through one page. Switching retains the same sample where available, remembers
+the last experiment per harness, and scopes unsaved drafts by exact evidence.
+The two-sample human-feedback V3 view remains clearly distinct from a full campaign.
+
+No modeling, scoring, candidate changes, or migration of review records occurred.
+All six frozen bundles and their ledgers verified successfully; the three original
+human reviews remain attached to the original V2 bundle. Existing bundle/UI files
+were not overwritten. The shared navigation UI has its own immutable presentation
+snapshot (`d19ea0768bbed68d62400950b62f20ea6ebc24024602fbd117aee4b1c57ca8fe`),
+and new reviews additionally bind to that presentation and catalog. Requests are
+bundle-scoped; stale save identities are rejected.
+
+Validation: 23 Python review/export/API tests and 6 Node navigation tests passed.
+Tests cover independent ledgers, old-review preservation, unchanged assets,
+presentation tampering, unknown/path-escaping routes, draft isolation, failed-load
+rollback, stale-response races, and navigation during saves. Live browser checks
+verified Codex `omnimech:2` (63.34) -> EvoCAD V2 same sample (66.43), V3 view selection,
+the three original reviews, synchronized geometry dragging, and a 390px mobile
+viewport. Browser warning/error log was empty. No test reviews were submitted to
+real ledgers.
+
+## Native Codex / Sol Ultra / OmniMech 2, 2026-09-14
+
+Completed the user's direct native-Codex comparison on the selected `omnimech:2`
+case. The successful execution campaign is
+`direct-codex-sol-ultra-omnimech2-https-20260914`: Sol ultra, source-only input,
+same AutoCAD MCP, no EvoCAD outer loop, no forced IR, no in-run GT feedback.
+The default-transport first run was preserved as infrastructure-interrupted;
+its missing-output zero is not a geometry score and is excluded from comparison.
+
+Native Codex voluntarily stopped after 1,679.828 seconds (28.0 minutes), producing
+one editable solid. Composite **63.34**, IoU **0.878517**, normalized Chamfer
+**0.009053**, bounds error **0**, volume error **5.1968%**, strict **fail**.
+Historical V2: score 66.43 / IoU 0.747455 / volume error 0.0108%.
+Historical V3: score 72.92 / IoU 0.802343 / volume error 0.4266%.
+The native result improves overlap and surface distance, but loses the entire
+20-point volume component. Do not reduce this tradeoff to a blanket harness win
+or loss. Effort, feedback access, CLI version and budgets differ from history.
+
+Ultra itself spawned three native helpers (dimensions, strategy, drawing audit).
+The main task cropped the input, built a first solid, checked native topology,
+corrected 0.5 mm offsets, rendered four views, then audited and saved the final
+DWG. It was not cut off by a repair-count or time limit. Its self-evaluation did
+not detect all remaining geometry errors. No follow-up repair run has been made.
+
+Details and reproducibility: `docs/experiments/direct-codex-sol-ultra-omnimech2.md`.
+New review: `http://127.0.0.1:8770/` (`start-review.ps1 -View direct`), with a
+separate immutable human-review ledger. Original review services are unchanged.
+Rendered evidence, native DWG/STL/topology, prompts, Codex events, MCP audit and
+supplementary public native-helper snapshots are retained under the workspace.
+The new page was browser-verified, including synchronized 3D rotation.
+
+## Results recap checked on 2026-09-14
+
+This recap distinguishes completed capability runs from diagnostics and proposed
+work. No CAD modeling or model evaluation was rerun for the recap.
+
+- Early CAD-1000-hours pilot (`pilot-v4-20260829`): 24 runs, 3 passes,
+  mean EQC 72.98; Sol/Terra/Luna means 76.90/73.30/68.75. This used the
+  earlier custom rubric and must not be compared numerically to later geometry
+  or BenchCAD scores. Input ambiguity motivated the switch to geometry GT.
+- Three-model geometry pilot: 10 samples per model, 30 runs, not 30 samples per
+  model. V2 strict passes were 6/10 for each model. The revised feedback loop V5
+  yielded Sol 8/10, Terra 6/10, Luna 4/10; mean selected scores were
+  99.88/91.22/72.65. These are historical reruns, not isolated causal effects.
+- Frozen Sol 30-case study: `agent-geometry-30-sol-v2` strict final 22/30
+  (73.33%), selected score mean 97.78; native-feedback V3 strict final 26/30
+  (86.67%), mean 98.76. Pass@1 changed 16/30 to 14/30. The paired final-pass
+  comparison has four gains, no losses, and sign-test p=0.125. These are the same
+  24 Ortho2CAD and 6 OmniMech cases, but multiple implementation changes are
+  confounded. V3 strict results by dataset: Ortho2CAD 23/24, OmniMech 3/6.
+- Human feedback: two repairs, one unresolved input-requirement gate. Relative
+  to prior selected scores, OmniMech 4 changed 99.40 -> 99.75 and OmniMech 9
+  changed 99.86 -> 97.92; neither repair strict-passed. No general benefit is
+  established by these interventions.
+- Boolean-lineage V2 diagnostic: OmniMech 4 selected 99.87; Ortho2CAD 00186338
+  selected 99.68 with a decision-transport censor. The separately frozen recovery
+  selected 99.25 across 14 attempts and reached its safety ceiling. No strict
+  passes or population-level conclusion from these targeted runs.
+- Exact-feature oracle on Ortho2CAD 00186338: both unordered exact features and
+  ordered plans strict-passed in one attempt (100.0, IoU 0.999108). Subsequent
+  input-identifiability probes found only three printed overall dimensions;
+  oracle success therefore supplies hidden information and does NOT establish
+  that all error in the ordinary image task belongs to the Agent or model.
+- IR single-case diagnostic on that sample: forced IR score 98.95 / IoU
+  0.960214; specialist IR score 99.95 / IoU 0.988461; exact oracle IR score
+  100.0 / IoU 0.999108. The first two did not strictly pass. A single case
+  cannot establish specialist-IR superiority.
+- BenchCAD 30-family study, Sol medium: baseline 30/30 scored, mean official
+  voxel IoU 0.7383129; forced IR 30/30 scored, 0.7412019. Specialist IR
+  stopped at 3/30, mean 0.4187917, by user decision after early degradation.
+  Its mean is not comparable to the complete 30-case means. In the forced arm,
+  first-checkpoint mean was 0.602363; post-hoc best-checkpoint mean was 0.777236
+  versus actual submitted mean 0.741202. Oracle selection is diagnostic only.
+- OpenHands adoption and a matched upstream BenchCAD harness comparison were
+  discussed, not implemented or evaluated in these saved results.
+
+Geometry selected score (0-100), strict-pass rate, and BenchCAD mean voxel IoU
+(0-1) are distinct metrics. Strict geometry passage requires all frozen
+thresholds, not merely a rounded score near 100. The detailed primary sources
+are the named campaigns' `summary.json`, `paired-sol-comparison.json`, and
+`evals/geometry-benchmarks/reference-runs/`.
+
+### Review service recovery
+
+The old review ports were not listening. The workspace-local launcher
+`apps/geometry-review/start-review.ps1` now starts hidden loopback servers,
+checks the bundle identities, and reuses matching live servers. Restart after
+an OS reboot with the command in the review README; no system service was added.
+
+Browser verification exposed a separate first-load frustum initialization bug:
+camera projection bounds were not recomputed when geometry changed scale.
+The source viewer now updates projection bounds during camera synchronization.
+`refresh_geometry_review_app` creates a separately hashed UI-only derivative,
+preserving source files, cached assets, campaign, scores, and all trajectories.
+No previous human adjudication is silently rebound to the new UI.
+
+- Recommended geometry page: `http://127.0.0.1:8765/`, 30 Sol V2 records with
+  post-hoc native feature localization and a repaired display, NOT the V3 rerun.
+- Original V2 adjudications: `http://127.0.0.1:8766/`, all three reviews retained.
+  This frozen historical UI retains the initial camera-frustum defect.
+- Lineage / recovery / feedback snapshots: ports 8767 / 8768 / 8769.
+- New display bundle: `agent-geometry-30-sol-v2-feature-review-display-v2`;
+  SHA-256 `7f65b1c4b53df7982c083e30bf453461855d2ab7b11863d4734ac8652dc21ff8`;
+  parent `f8e9145c5c4d0c46a7e7dcbb33acf587d520e53c88fe0b7c4ee5ff55d2409fac`.
+- Verification: 14 geometry-review tests passed, including immutable refresh,
+  unchanged cached evidence, corrupt-source rejection, and HTTP serving tests.
+
 ## 2026-09-02: Surface-level feature localization foundation
 
 The geometry verifier now emits deterministic bidirectional point-to-triangle
@@ -511,3 +702,62 @@ The unanimous observation of only three overall dimensions is sufficient to revi
 the sample-level conclusion: Agent-versus-model ownership is confounded by input
 specification. The exact-feature oracle proved execution capability but also supplied
 hidden information, so its success cannot be charged to normal perception failure.
+
+## 2026-09-15: EvoCAD + Astra Ultra On OmniMech 2
+
+Campaign `evocad-astra-ultra-omnimech2-https-20260915` completed with baseline
+EvoCAD, `gpt-6-astra` / `ultra`, the original drawing and no human mirror hint,
+prior candidate, forced IR or oracle input. The first scored candidate `a001`
+strict-passed at 100.0, IoU 1.000000, normalized Chamfer 0.004563, zero bbox error
+and 0.0483% volume error. After receiving verifier feedback, the Agent chose to
+stop because no supported score improvement remained. There was no repair round.
+
+Native Codex + Astra Ultra previously scored 91.69 on the same sample. The +8.31
+point difference is descriptive and does not identify a causal harness advantage:
+there is only one sample/run, prompts and orchestration differ, and this success
+preceded score feedback. A host interruption required supervisor recovery of the
+same conversation and staged geometry. The review's 705.036 seconds describe the
+resumed attempt; initial launch to completion was 1594.503 seconds, including
+interruption/recovery. Raw resumed CLI token counters appear cumulative, so the
+harness sum must not be used as verified billable usage.
+
+Full conditions, caveats and evidence hashes:
+`docs/experiments/evocad-astra-ultra-omnimech2.md`. The new review entry is
+`http://127.0.0.1:8770/?view=evocad-astra-2`, under Harness `EvoCAD`; original Codex
+and human mirror diagnostic bundles remain unchanged. Postrun ledger verification
+passed for 218 files and 214 events, with 171 additional artifacts preserving
+staged DWGs, native jobs, interrupted traces and supervisor recovery. The review
+shows all three interactive geometry panels and synchronized camera rotation.
+
+### Astra Historical Evidence Library
+
+The four completed Astra model runs (native OmniMech 2/4/10 and EvoCAD OmniMech 2)
+and the separate human mirror diagnostic now have a shared read-only evidence UI
+at `http://127.0.0.1:8770/astra.html`. No CAD/model executions were repeated.
+The five exports contain 1,000 manifest-indexed files, 292 CLI events, 67 MCP
+calls and 28 native jobs including the one human operation. Interrupted phases,
+postrun snapshots and evaluator incidents are explicitly distinguished.
+
+All exported-file and ZIP hashes passed. The UI supports per-run I/O search,
+native Lisp/log browsing, file preview and complete archive download. Existing
+geometry review remains linked and its scores/ledgers are unchanged. Verification
+passed 34 Python and 9 JavaScript tests plus browser checks; details and immutable
+presentation binding are in `docs/ASTRA_RECORDS.md`.
+
+### CADGenBench 111: Native Astra Ultra With Local AutoCAD
+
+On 2026-09-16, ran generation fixture 111 with native Codex, `gpt-6-astra`,
+`ultra`, and the locally installed AutoCAD 2024 through the audited MCP. Only
+the official frozen drawing and description were supplied. The conversation
+completed in 2113.689 seconds, without GT feedback or human geometry hints.
+One connected native solid and a matching SAT roundtrip passed local validity
+checks. Two failed side-port jobs were autonomously repaired; a visual ear-blend
+correction was also self-initiated. Several minor dimensions remain inferred.
+
+Official benchmark score is unknown: the GT is private and no public submission
+was made. Fourteen agent checks and the supervisor's watertight mesh check must
+not be interpreted as official accuracy. Archived 156 CLI events, 31 MCP calls,
+15 native jobs and 193 hash-verified files. An inventory-only launcher typo was
+fixed and the final summary recovered from persisted completion state without
+rerunning the model or editing geometry. Details, hashes, and limitations:
+`docs/experiments/cadgenbench-111-native-astra-ultra.md`.

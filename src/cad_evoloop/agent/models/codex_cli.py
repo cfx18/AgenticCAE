@@ -29,6 +29,7 @@ class CodexCLIConfig:
     config_overrides: tuple[str, ...] = ()
     isolated: bool = True
     approve_for_me: bool = True
+    ephemeral: bool = False
 
 
 def build_codex_exec_command(
@@ -46,8 +47,11 @@ def build_codex_exec_command(
     isolated: bool = True,
     approve_for_me: bool = True,
     prompt_via_stdin: bool = False,
+    ephemeral: bool = False,
 ) -> list[str]:
     command = [executable, "exec", "--skip-git-repo-check"]
+    if ephemeral:
+        command.append("--ephemeral")
     if isolated:
         command.extend(["--ignore-user-config", "--ignore-rules"])
     if approve_for_me:
@@ -120,7 +124,7 @@ class CodexCLIProvider:
             tools=bool(self.config.config_overrides),
             images=True,
             structured_output=True,
-            resumable_conversation=True,
+            resumable_conversation=not self.config.ephemeral,
             reasoning_controls=True,
         )
 
@@ -132,6 +136,8 @@ class CodexCLIProvider:
     ) -> tuple[ConversationHandle, ModelTurn]:
         if handle.provider != self.name:
             raise ValueError(f"Cannot resume a {handle.provider!r} conversation with Codex CLI")
+        if self.config.ephemeral:
+            raise ValueError("Cannot resume an ephemeral Codex conversation")
         return self._invoke(request, thread_id=handle.conversation_id)
 
     def cancel(self, handle: ConversationHandle) -> None:
@@ -172,6 +178,7 @@ class CodexCLIProvider:
             isolated=self.config.isolated,
             approve_for_me=self.config.approve_for_me,
             prompt_via_stdin=True,
+            ephemeral=self.config.ephemeral,
         )
         prompt_path.write_text(prompt, encoding="utf-8", newline="\n")
         (invocation_dir / "command.json").write_text(

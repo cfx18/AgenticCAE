@@ -16,9 +16,17 @@ evals/cad-1000-hours/improvement/proposals/
 evals/cad-1000-hours/samples/
 evals/cad-1000-hours/improvement/campaigns/
 evals/geometry-benchmarks/batch/
+evals/geometry-benchmarks/diagnostics/
 evals/geometry-benchmarks/records/
 evals/geometry-benchmarks/samples/
 evals/geometry-benchmarks/human-reviews/
+evals/Paper_filmcooling/frozen-inputs/
+evals/Paper_filmcooling/runs/
+evals/Paper_filmcooling/*.pdf
+evals/X_hard/
+evals/cadgenbench/inputs/
+evals/cadgenbench/runs/
+evals/cadgenbench/submissions/
 
 # AutoCAD jobs, checkpoints, and local application state.
 mcp/jobs/
@@ -35,9 +43,19 @@ artifacts/
 reports/generated/
 paper/build/
 
+# Local/shareable datasets live outside git. Upload these to external storage and
+# restore them under evals/data/ when running data-dependent evals.
+evals/data/**
+!evals/data/
+!evals/data/README.md
+
 # This managed workspace keeps Git metadata separate from the worktree.
 .git-meta/
+tmp/
 
 # Loader-managed caches and unrelated local teaching data.
 /skills/
 【工图】2023春/
+
+# Local Kimi credentials. Keep the versioned template next to this file.
+/evals/Paper_filmcooling/kimi/.env

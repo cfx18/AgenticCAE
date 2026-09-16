@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,3 +85,15 @@ def test_codex_provider_capabilities_reflect_tool_configuration(tmp_path: Path) 
 
     assert without_tools.capabilities().tools is False
     assert with_tools.capabilities().tools is True
+
+
+def test_ephemeral_turn_is_recorded_but_not_resumable(tmp_path, monkeypatch):
+    monkeypatch.setattr("cad_evoloop.agent.models.codex_cli.subprocess.run", fake_codex_run)
+    model = CodexCLIProvider(CodexCLIConfig(cwd=tmp_path, artifact_root=tmp_path / "calls",
+                                          executable="codex-test", ephemeral=True))
+    handle, turn = model.start(ModelRequest(instructions="One-off blind annotation"))
+    command = json.loads((Path(turn.provider_metadata["artifacts"]["directory"]) / "command.json").read_text())
+    assert "--ephemeral" in command
+    assert not model.capabilities().resumable_conversation
+    with pytest.raises(ValueError, match="ephemeral"):
+        model.continue_(handle, ModelRequest(instructions="Continue"))

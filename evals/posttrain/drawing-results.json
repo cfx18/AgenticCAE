@@ -1,0 +1,18 @@
+{
+  "batches": [
+    {"id":"long","label":"原版长提示","description":"详细问题与预裁剪图","bundle":"evals/data/posttrain/real-drawings/reviews/long-r1-review"},
+    {"id":"boxed","label":"基础框选","description":"短问题与单框输入","bundle":"evals/data/posttrain/real-drawings/reviews/boxed-r2-learner-review"},
+    {"id":"hard","label":"上下文难题","description":"盲审难度筛选后的短问题","bundle":"evals/data/posttrain/real-drawings/reviews/boxed-hard-r1-learner-review"}
+  ],
+  "diagnostics": [
+    {"label":"OmniMech-4：外圈线段", "url":"/?batch=spot-omnimech-4&task=omnimech4-line-01"}
+  ],
+  "semantic_reviews": [
+    {"batch":"boxed","task":"boxed-03","expected":"可见轮廓线","answer":"粗实线（可见轮廓线）","outcome":"agree","note":"助手事后文本核对：回答明确包含可见轮廓线；未独立确认图纸标注。"},
+    {"batch":"boxed","task":"boxed-13","expected":"中心线","answer":"细点画线（中心线/轴线）","outcome":"agree","note":"助手事后文本核对：中心线/轴线与候选类别一致；未独立确认图纸标注。"},
+    {"batch":"hard","task":"hard-07","expected":"非几何线","answer":"非几何线——该细实线是尺寸的界线（延长线），不代表零件的实际边（不是可见边，也不是虚线表示的不可见边）。","outcome":"agree","note":"助手事后文本核对：最终类别为非几何线；附加解释未单独判分。"},
+    {"batch":"hard","task":"hard-12","expected":"非几何线","answer":"非几何线（剖切线，表示 B—B 剖切位置）","outcome":"agree","note":"助手事后文本核对：最终类别为非几何线；附加解释未单独判分。"},
+    {"batch":"hard","task":"hard-16","expected":"剖切位置线","answer":"剖切位置线（A—A剖切符号中的粗实线短画）","outcome":"agree","note":"助手事后文本核对：最终类别为剖切位置线；附加解释未单独判分。"},
+    {"batch":"hard","task":"hard-18","expected":"连通","answer":"是，连通。俯视图中框内10宽槽与中央∅20圆孔同中心且槽宽窄于孔径，槽棱线伸入圆孔边界；槽深32已开通至圆孔，槽与中央圆孔相通。","outcome":"agree","note":"助手事后文本核对：最终结论为连通；解释中尺寸与几何断言未单独判分。"}
+  ]
+}

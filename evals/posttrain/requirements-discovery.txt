@@ -1,0 +1,5 @@
+requests==2.32.5
+PySocks==1.7.1
+beautifulsoup4==4.13.4
+soupsieve==2.9.2
+Pillow==11.3.0

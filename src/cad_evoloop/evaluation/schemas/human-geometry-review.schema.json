@@ -22,6 +22,18 @@
         "target_id", "sample_id", "model", "attempt_id", "attempt_evidence_sha256"
       ]
     },
+    "presentation": {
+      "type": "object",
+      "required": ["schema_version", "presentation_sha256", "app_sha256", "catalog_sha256", "manifest_path"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "presentation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "app_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "catalog_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "manifest_path": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
     "reviewer": {
       "type": "object",
       "required": ["id", "expertise"],

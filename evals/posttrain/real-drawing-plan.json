@@ -1,0 +1,26 @@
+{
+  "version": "real-drawing-qa-plan-v1",
+  "purpose": "Private diagnostic on real drawings; model-proposed labels require human review.",
+  "assignments": [
+    {"question_id":"drawing-01","source_id":"pdf-035","task_type":"line_role","batch":"a"},
+    {"question_id":"drawing-02","source_id":"pdf-035","task_type":"cross_view","batch":"a"},
+    {"question_id":"drawing-03","source_id":"pdf-035","task_type":"dimension_attachment","batch":"a"},
+    {"question_id":"drawing-04","source_id":"pdf-065","task_type":"line_role","batch":"a"},
+    {"question_id":"drawing-05","source_id":"pdf-065","task_type":"dimension_chain","batch":"a"},
+    {"question_id":"drawing-06","source_id":"pdf-065","task_type":"clarification","batch":"a"},
+    {"question_id":"drawing-07","source_id":"pdf-120","task_type":"dimension_chain","batch":"a"},
+    {"question_id":"drawing-08","source_id":"pdf-120","task_type":"dimension_attachment","batch":"a"},
+    {"question_id":"drawing-09","source_id":"web-2679-01","task_type":"dimension_chain","batch":"a"},
+    {"question_id":"drawing-10","source_id":"web-2679-01","task_type":"cross_view","batch":"a"},
+    {"question_id":"drawing-11","source_id":"pdf-162","task_type":"line_role","batch":"b"},
+    {"question_id":"drawing-12","source_id":"pdf-162","task_type":"section_reasoning","batch":"b"},
+    {"question_id":"drawing-13","source_id":"pdf-162","task_type":"cross_view","batch":"b"},
+    {"question_id":"drawing-14","source_id":"pdf-178","task_type":"section_reasoning","batch":"b"},
+    {"question_id":"drawing-15","source_id":"pdf-178","task_type":"dimension_chain","batch":"b"},
+    {"question_id":"drawing-16","source_id":"pdf-178","task_type":"dimension_attachment","batch":"b"},
+    {"question_id":"drawing-17","source_id":"pdf-202","task_type":"line_role","batch":"b"},
+    {"question_id":"drawing-18","source_id":"pdf-202","task_type":"clarification","batch":"b"},
+    {"question_id":"drawing-19","source_id":"web-1936-01","task_type":"cross_view","batch":"b"},
+    {"question_id":"drawing-20","source_id":"web-1936-01","task_type":"dimension_attachment","batch":"b"}
+  ]
+}

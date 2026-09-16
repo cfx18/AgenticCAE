@@ -79,6 +79,7 @@ def load_frozen_selection(path: str | Path) -> tuple[Path, dict[str, Any]]:
 
 def _agent_source_hashes(workspace: Path) -> dict[str, str]:
     paths = sorted((workspace / "src/cad_evoloop/agent").rglob("*.py"))
+    paths.extend(sorted((workspace / "src/cad_evoloop/agent/models").glob("*.mjs")))
     paths.extend([
         workspace / "src/cad_evoloop/evaluation/geometry_campaign.py",
         workspace / "src/cad_evoloop/evaluation/geometry_features.py",
@@ -111,7 +112,7 @@ def _agent_source_hashes(workspace: Path) -> dict[str, str]:
     }
 
 
-def collect_runtime_environment(executable: str | None = None) -> dict[str, Any]:
+def collect_runtime_environment(executable: str | None = None, transport: Any = None) -> dict[str, Any]:
     """Capture the runtime identity that can change an evaluation result."""
     packages = {}
     for distribution in GEOMETRY_DISTRIBUTIONS:
@@ -121,6 +122,8 @@ def collect_runtime_environment(executable: str | None = None) -> dict[str, Any]
             packages[distribution] = None
     codex_command = executable or shutil.which("codex") or "codex"
     try:
+        if transport is not None:
+            raise OSError("Codex CLI is not used by this transport")
         completed = subprocess.run(
             [codex_command, "--version"],
             capture_output=True,
@@ -139,7 +142,8 @@ def collect_runtime_environment(executable: str | None = None) -> dict[str, Any]
         },
         "platform": platform.platform(),
         "packages": packages,
-        "codex": {"command": codex_command, "version": codex_version},
+        "codex": {"command": None if transport else codex_command, "version": codex_version},
+        **({"transport": transport.runtime_identity} if transport else {}),
     }
 
 
@@ -156,7 +160,7 @@ def require_geometry_environment(environment: dict[str, Any]) -> None:
     from cad_evoloop.evaluation.geometry_score import _dependencies
 
     _dependencies()
-    if environment["codex"]["version"] is None:
+    if not environment.get("transport", {}).get("version") and environment["codex"]["version"] is None:
         raise RuntimeError("Codex CLI preflight failed; `codex --version` did not succeed")
 
 
@@ -422,6 +426,7 @@ def run_agent_geometry_campaign(
     oracle_context: str | Path | None = None,
     oracle_level: str | None = None,
     reconstruction_mode: str = "baseline",
+    transport: Any = None,
 ) -> dict[str, Any]:
     if max_jobs is not None and max_jobs < 1:
         raise ValueError("max_jobs must be positive")
@@ -439,7 +444,10 @@ def run_agent_geometry_campaign(
         raise ValueError(f"{reconstruction_mode} cannot be combined with oracle context")
     if reconstruction_mode != "baseline" and human_feedback:
         raise ValueError("IR ablation conditions cannot be combined with human feedback")
-    runtime_environment = collect_runtime_environment(executable)
+    runtime_environment = (
+        collect_runtime_environment(executable, transport) if transport
+        else collect_runtime_environment(executable)
+    )
     if not dry_run:
         require_geometry_environment(runtime_environment)
     manifest_path, manifest_value = load_geometry_manifest(manifest)
@@ -597,6 +605,7 @@ def run_agent_geometry_campaign(
         voxel_resolution=voxel_resolution,
         split_path=selection_path,
         reconstruction_mode=reconstruction_mode,
+        transport=transport,
     )
     scheduled_this_run = 0
     feedback_dir = campaign_dir / "human-feedback"

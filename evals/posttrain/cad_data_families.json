@@ -1,0 +1,221 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-09-16",
+  "policy": "Noncommercial research pilot. Public/candidate sources are not accepted training gold until GT, license, deduplication, and human review gates pass.",
+  "industryforge_mapping": {
+    "paper": "IndustryForge-27B: A Domain-Enhanced Multimodal Foundation Model for Industrial CAD",
+    "arxiv": "https://arxiv.org/pdf/2607.28050",
+    "families_used": ["CAD-VQA", "Text-to-CadQuery", "COM CAD", "CadQuery Assembly"],
+    "evoCAD_extension": "Keep the same foundation-model capability split, but bind every local sample to source receipts, verifiers, Kimi smoke status, and later human review."
+  },
+  "families": [
+    {
+      "family_id": "cad_vqa_real_drawing",
+      "label": "Real engineering drawing QA",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Full mechanical drawing image plus short or structured question; sometimes one boxed ROI.",
+      "output_target": "JSON answer for line role, dimension attachment, dimension-chain, section, cross-view, or sufficiency.",
+      "gt_status": "model_proposed_pending_human",
+      "primary_sources": [
+        {"name": "User supplied drawing PDF pages", "url": "local: evals/data/posttrain/real-drawings/source-r2/source.pdf"},
+        {"name": "Public xifeng article preview drawings", "url": "https://xifengboke.com/category-8_2.html"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/data/posttrain/real-drawings/source-r2/sources.json", "status": "available", "note": "8 rendered/local public drawing images"},
+        {"path": "evals/data/posttrain/real-drawings/tasks-r1/pilot-summary.json", "status": "available", "note": "20 proposed tasks, 18 diagnostic-eligible, zero human-accepted"}
+      ],
+      "adapter": "cad_evoloop.posttrain.drawing_qa prepare -> author -> audit -> build",
+      "verifier": "json_fields with model-proposed labels; must remain diagnostic until human review accepts GT.",
+      "kimi_smoke": {
+        "status": "partial_existing",
+        "summary_paths": [
+          "evals/data/posttrain/real-drawings/kimi-r1/summary.json",
+          "evals/data/posttrain/real-drawings/kimi-missing-r1/summary.json"
+        ],
+        "interpretation": "Agreement with model-proposed labels, not accuracy against expert GT; all 18 diagnostic-eligible tasks now have a successful Kimi run when latest retries are considered."
+      },
+      "risk": "Good for Kimi failure-pattern discovery now; not fit for SFT/RL target labels until human review or authoritative drawing answers exist."
+    },
+    {
+      "family_id": "cad_vqa_synthetic_from_gt_brep",
+      "label": "Generated drawing QA from verified BRep",
+      "status": "active_seeded",
+      "pilot_sample_goal": 20,
+      "query_input": "Rendered orthographic drawing images generated from known STEP/BRep plus a perception or sufficiency question.",
+      "output_target": "JSON answer for line role, dimension attachment, cross-view dimensions, projection diagnosis, or clarification.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "Autodesk Fusion 360 Gallery reconstruction r1.0.1", "url": "https://github.com/AutodeskAILab/Fusion360GalleryDataset"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/data/posttrain/pilot-r4/pilot-summary.json", "status": "available", "note": "20 mechanically checked tasks from 16 source parts"},
+        {"path": "evals/data/sources/fusion360gallery/posttrain-fusion-r1/source-manifest.json", "status": "available", "note": "32 bounded Fusion source parts"}
+      ],
+      "adapter": "cad_evoloop.posttrain.sources acquire_fusion + cad_evoloop.posttrain.build build_pilot",
+      "verifier": "json_fields for QA; fixed-frame BRep for repair/reconstruction tasks.",
+      "kimi_smoke": {
+        "status": "existing",
+        "summary_paths": [
+          ".local/posttrain/kimi-smoke-r3/summary.json",
+          ".local/posttrain/kimi-smoke-missing-r1/summary.json"
+        ],
+        "interpretation": "All 15 public-only Kimi perception tasks now have a successful run when latest retries are considered; geometry-code tasks are intentionally skipped by this smoke harness."
+      },
+      "risk": "Drawings are generated, not human engineering drawings; useful for controlled GT and negative controls."
+    },
+    {
+      "family_id": "orthographic_to_brep",
+      "label": "Orthographic views and dimensions to 3D BRep",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Three orthographic views and a dimension/specification sheet.",
+      "output_target": "One STEP solid in the stated coordinate frame.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "Fusion generated reconstruction fixtures", "url": "local: evals/data/posttrain/pilot-r4/tasks/reconstruct-*"},
+        {"name": "OmniMech style benchmark cases", "url": "local: evals/geometry-benchmarks"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/data/posttrain/pilot-r4/tasks/reconstruct-01", "status": "available", "note": "Controlled ring reconstruction fixture"},
+        {"path": "evals/data/posttrain/pilot-r4/tasks/reconstruct-02", "status": "available", "note": "Controlled box reconstruction fixture"},
+        {"path": "evals/geometry-benchmarks/reference-runs/geometry-smoke-v2.json", "status": "available", "note": "Prior OmniMech-style geometry run evidence"},
+        {"path": "evals/data/posttrain/multifamily-seed-r1/dataset-summary.json", "status": "available", "note": "20 ready-to-use orthographic-to-BRep seed tasks"}
+      ],
+      "adapter": "Reuse posttrain bundle layout; add code-execution learner sandbox before Kimi runs.",
+      "verifier": "fixed-frame BRep missing/extra volume plus length/alignment tolerances.",
+      "kimi_smoke": {
+        "status": "not_run",
+        "summary_paths": [],
+        "interpretation": "Current Kimi smoke only allows observe/conclude/submit JSON, not safe STEP-producing code execution."
+      },
+      "risk": "This is the core geometry-making benchmark; it needs a learner sandbox before model code is executed."
+    },
+    {
+      "family_id": "text_or_image_to_cadquery",
+      "label": "Text or render to CadQuery program",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Natural-language prompt and/or single/multi-view render.",
+      "output_target": "Executable CadQuery Python script plus rendered STEP/STL.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "IterCAD_Data", "url": "https://huggingface.co/datasets/KnowledgeXLab/IterCAD_Data"},
+        {"name": "Text-to-CadQuery project lineage", "url": "https://github.com/Text-to-CadQuery/Text-to-CadQuery"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/cad-1000-hours", "status": "candidate", "note": "Existing local adaptive/verifier skeleton; not a Text2CadQuery import"},
+        {"path": "evals/data/posttrain/multifamily-seed-r1/dataset-summary.json", "status": "available", "note": "20 ready-to-use deterministic Text-to-CadQuery-style STEP tasks"}
+      ],
+      "adapter": "New importer should normalize source prompt, image, solution.py, rendered target.step, and sandbox receipt into the posttrain task layout.",
+      "verifier": "Execute CadQuery in pinned env; compare target/candidate geometry using Chamfer and BRep checks where possible.",
+      "kimi_smoke": {
+        "status": "not_run",
+        "summary_paths": [],
+        "interpretation": "Needs code-producing harness and timeout/resource policy."
+      },
+      "risk": "Dataset licenses, train/test leakage, and executable-code safety must be checked before import."
+    },
+    {
+      "family_id": "cad_api_action",
+      "label": "CAD software API action generation",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "CAD task text, optional UI screenshot or drawing, plus target CAD backend.",
+      "output_target": "AutoCAD MCP / AutoLISP / COM-style operation trace that produces a CAD artifact.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "ComAct concept and ComCADBench", "url": "https://arxiv.org/abs/2606.13239"},
+        {"name": "Local AutoCAD MCP audited jobs", "url": "local: mcp/"}
+      ],
+      "local_artifacts": [
+        {"path": "mcp/autocad_mcp_audited.py", "status": "available", "note": "Local audited AutoCAD call surface"},
+        {"path": "mcp/autocad_core_console.py", "status": "available", "note": "Core Console recovery path"},
+        {"path": "evals/data/posttrain/multifamily-seed-r1/dataset-summary.json", "status": "available", "note": "20 deterministic CAD-action fixture tasks; not live AutoCAD/SolidWorks sessions"}
+      ],
+      "adapter": "Wrap existing audited AutoCAD MCP jobs into posttrain Episode receipts; do not expose GT/private verifier to learner.",
+      "verifier": "Native CAD execution receipt, topology export, structural checks, and geometry comparison.",
+      "kimi_smoke": {
+        "status": "not_run",
+        "summary_paths": [],
+        "interpretation": "Should be run only after AutoCAD hang recovery and sandbox isolation are hardened."
+      },
+      "risk": "High value, but operationally fragile; needs watchdog/restart and deterministic job cleanup."
+    },
+    {
+      "family_id": "assembly_spec_to_cad",
+      "label": "Assembly specification to constrained CAD assembly",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Natural-language assembly requirement or structured part/interface specification.",
+      "output_target": "Parametric parts plus assembly script/mates and interference-free assembled artifact.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "Fusion 360 Gallery assembly dataset", "url": "https://github.com/AutodeskAILab/Fusion360GalleryDataset/blob/master/docs/assembly.md"},
+        {"name": "AssemCAD paper", "url": "https://arxiv.org/abs/2607.05123"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/posttrain/cad_data_families.json", "status": "candidate", "note": "This registry records assembly as an import family"},
+        {"path": "evals/data/posttrain/multifamily-seed-r1/dataset-summary.json", "status": "available", "note": "20 component-spec assembly seed tasks with final-BRep GT and reference assembly JSON"}
+      ],
+      "adapter": "Importer should keep component graph, part files, transforms, mate/port schema, and collision checks separate from monolithic code.",
+      "verifier": "All components present, port/mate constraints satisfied, no unacceptable interference, BRep-level part checks.",
+      "kimi_smoke": {
+        "status": "not_run",
+        "summary_paths": [],
+        "interpretation": "Too early for Kimi smoke until representation and verifier are added."
+      },
+      "risk": "Assembly data is the least covered locally but important for publishable long-horizon CAD claims."
+    },
+    {
+      "family_id": "repair_reflection_loop",
+      "label": "Verifier-feedback repair and self-reflection",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Initial wrong CAD artifact, public drawing/spec, verifier feedback, and trajectory history.",
+      "output_target": "Corrected artifact plus structured reflection/action decision.",
+      "gt_status": "verified_gt",
+      "primary_sources": [
+        {"name": "Local Fusion repair tasks", "url": "local: evals/data/posttrain/pilot-r4/tasks/repair-*"},
+        {"name": "CAD-1000-hours improvement skeleton", "url": "local: evals/cad-1000-hours"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/data/posttrain/pilot-r4/tasks/repair-01", "status": "available", "note": "Bore repair fixture"},
+        {"path": "evals/cad-1000-hours/adaptive/session.py", "status": "available", "note": "Adaptive loop session code"}
+      ],
+      "adapter": "Use existing adaptive protocol and run ledger; store every verifier result in trajectory events.",
+      "verifier": "Same task verifier as source task; reward shaping must be separate from acceptance.",
+      "kimi_smoke": {
+        "status": "not_run",
+        "summary_paths": [],
+        "interpretation": "Needs code execution and iterative feedback loop, not the perception-only smoke harness."
+      },
+      "risk": "Useful for RL/environment work, but only after verifier feedback is rich enough to localize repairable errors."
+    },
+    {
+      "family_id": "cad_cae_long_horizon",
+      "label": "CAD to mesh, simulation setup, and post-processing",
+      "status": "active_partial",
+      "pilot_sample_goal": 20,
+      "query_input": "Paper/specification figures and text, target CAD/mesh/simulation requirements.",
+      "output_target": "CAD geometry, mesh/solver setup, verification report, and post-processing evidence.",
+      "gt_status": "candidate_gt_not_imported",
+      "primary_sources": [
+        {"name": "Local film-cooling paper tasks", "url": "local: evals/Paper_filmcooling"},
+        {"name": "SimLoop direction referenced by IndustryForge", "url": "https://arxiv.org/pdf/2607.28050"}
+      ],
+      "local_artifacts": [
+        {"path": "evals/Paper_filmcooling/runs/thole-baseline-hole-kimi-k3-minimal-20260916-r3/result.json", "status": "available", "note": "Prior Kimi CAD extraction/AutoCAD run"},
+        {"path": "evals/Paper_filmcooling/runs/thole-baseline-hole-astra-ultra-20260915/attempts/a001/geometry-report.json", "status": "available", "note": "Prior Astra geometry evidence"}
+      ],
+      "adapter": "Keep this as long-horizon eval, not mixed into short CAD-VQA SFT until stage labels are separated.",
+      "verifier": "Geometry checks, mesh checks, solver/log checks, and report consistency checks.",
+      "kimi_smoke": {
+        "status": "existing_case_study",
+        "summary_paths": [],
+        "interpretation": "Existing runs are case studies; no 20-30 sample batch yet."
+      },
+      "risk": "Publishable direction, but expensive and heterogeneous; should not block the core CAD post-training set."
+    }
+  ]
+}

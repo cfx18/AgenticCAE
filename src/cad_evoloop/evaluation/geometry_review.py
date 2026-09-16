@@ -130,6 +130,10 @@ def _snapshot_review_system(
             Path("geometry-viewer.js"),
         ),
         (implementation_root / "apps/geometry-review/styles.css", Path("styles.css")),
+        (implementation_root / "apps/geometry-review/benchmark-metrics.js", Path("benchmark-metrics.js")),
+        (implementation_root / "apps/geometry-review/benchmark-metrics.css", Path("benchmark-metrics.css")),
+        (implementation_root / "apps/geometry-review/vendor/lucide/lucide.min.js", Path("vendor/lucide/lucide.min.js")),
+        (implementation_root / "apps/geometry-review/vendor/lucide/LICENSE", Path("vendor/lucide/LICENSE")),
         (
             implementation_root / "apps/geometry-review/vendor/three/three.module.min.js",
             Path("vendor/three/three.module.min.js"),
@@ -205,9 +209,64 @@ def _find_source_manifest(workspace: Path, expected_sha256: str) -> Path | None:
     return None
 
 
+def refresh_geometry_review_app(source_dir: Path, output_dir: Path) -> dict[str, Any]:
+    """Create a new UI snapshot without rerunning or modifying frozen evidence."""
+    from cad_evoloop.evaluation.human_review import HumanReviewStore
+
+    source_dir, output_dir = Path(source_dir).resolve(), Path(output_dir).resolve()
+    if output_dir == source_dir or source_dir in output_dir.parents:
+        raise ValueError("The refreshed bundle must be outside the source bundle")
+    if output_dir.exists():
+        raise FileExistsError(f"Refusing to overwrite an existing bundle: {output_dir}")
+    store = HumanReviewStore(source_dir / "review-data.json", source_dir / "unused-review-ledger.jsonl")
+    payload = json.loads((source_dir / "review-data.json").read_text(encoding="utf-8"))
+    if payload["review_system"]["render_protocol"] != RENDER_PROTOCOL:
+        raise ValueError("A UI-only refresh cannot change the cached rendering protocol")
+    output_dir.mkdir(parents=True)
+    shutil.copytree(source_dir / "assets", output_dir / "assets")
+    payload.pop("bundle_sha256")
+    payload["display_revision"] = {
+        "parent_bundle_sha256": store.bundle["bundle_sha256"],
+        "kind": "ui-only-refresh",
+        "evidence_recomputed": False,
+        "reviews_migrated": False,
+    }
+    payload["review_system"] = _snapshot_review_system(
+        output_dir, payload["campaign"].get("agent_loop_protocol"),
+    )
+    payload["bundle_sha256"] = _canonical_sha256(payload)
+    (output_dir / "review-data.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+    HumanReviewStore(output_dir / "review-data.json", output_dir / "unused-review-ledger.jsonl")
+    return payload
+
+
 def _public_events(path: Path, phase: str) -> list[dict[str, Any]]:
     events = []
     for value in _read_jsonl(path):
+        if value.get("role") in {"assistant", "tool", "user"}:
+            if value.get("role") != "assistant":
+                continue
+            content = value.get("content") or []
+            if isinstance(content, str):
+                content = [{"type": "text", "text": content}]
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text" and block.get("text"):
+                    events.append({"type": "agent_message", "phase": phase,
+                                   "status": "recorded", "text": block["text"]})
+            for call in value.get("tool_calls") or []:
+                function = call.get("function") or {}
+                arguments = function.get("arguments") or {}
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {"raw": arguments}
+                events.append({"type": "tool_call", "phase": phase,
+                               "status": "requested", "tool": function.get("name"),
+                               "call_id": call.get("id"), "arguments": redact(arguments)})
+            continue
         if value.get("type") != "item.completed":
             continue
         item = value.get("item") or {}
@@ -427,6 +486,8 @@ def generate_geometry_review_bundle(
             reflection_path = attempt_dir / "reflection.json"
             feedback_path = attempt_dir / "feedback-packet.json"
             events_path = attempt_dir / "codex-events.jsonl"
+            if not events_path.is_file() and (attempt_dir / "kimi-events.jsonl").is_file():
+                events_path = attempt_dir / "kimi-events.jsonl"
             reflection_events_path = attempt_dir / "reflection-events.jsonl"
             reflection_stderr_path = attempt_dir / "reflection-stderr.log"
             audit_path = attempt_dir / "mcp-audit.jsonl"
@@ -584,7 +645,8 @@ def generate_geometry_review_bundle(
                 "verdict": _file_evidence(verdict_path),
                 "reflection": _file_evidence(reflection_path),
                 "feedback_packet": _file_evidence(feedback_path),
-                "codex_events": _file_evidence(events_path),
+                ("kimi_events" if events_path.name == "kimi-events.jsonl" else "codex_events"):
+                    _file_evidence(events_path),
                 "reflection_events": _file_evidence(reflection_events_path),
                 "reflection_stderr": _file_evidence(reflection_stderr_path),
                 "mcp_audit": _file_evidence(audit_path),

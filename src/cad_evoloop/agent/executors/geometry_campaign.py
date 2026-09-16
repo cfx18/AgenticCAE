@@ -28,6 +28,7 @@ class GeometryCampaignExecutorConfig:
     voxel_resolution: int = 64
     split_path: Path | None = None
     reconstruction_mode: str = "baseline"
+    transport: Any = None
 
 
 class GeometryCampaignExecutor:
@@ -95,6 +96,7 @@ class GeometryCampaignExecutor:
             human_feedback=human_feedback,
             oracle_context=oracle_context,
             reconstruction_mode=self.config.reconstruction_mode,
+            **({"transport": self.config.transport} if self.config.transport else {}),
         )
         job_dir = Path(result["job_dir"])
         parent_ids = tuple(dict.fromkeys([

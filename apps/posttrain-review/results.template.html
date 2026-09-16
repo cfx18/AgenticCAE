@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EvoCAD | KIMI 读图评测</title><style>__REPORT_STYLE__</style></head>
+<body>
+  <header class="app-header"><a class="brand" href="/">EvoCAD <span>读图评测</span></a><nav aria-label="评审工作区"><a id="geometryReviewLink" href="http://127.0.0.1:8770/?view=features"><i data-lucide="box" aria-hidden="true"></i>几何评审</a><a href="/?batch=hard&task=hard-15"><i data-lucide="scan-eye" aria-hidden="true"></i>题目评审</a><button id="download" class="icon-button" aria-label="下载结果 JSON" title="下载结果 JSON"><i data-lucide="download" aria-hidden="true"></i></button></nav></header>
+  <main>
+    <div class="heading"><div><h1>KIMI 读图判断</h1><p id="snapshot"></p></div><div class="scope"><label for="batch">批次</label><select id="batch"><option value="all">全部批次</option></select></div></div>
+    <div class="method-row"><div class="segmented" role="group" aria-label="判分口径"><button data-mode="adjusted" aria-pressed="true">事后核对口径</button><button data-mode="raw" aria-pressed="false">原始自动判分</button></div><span id="population"></span></div>
+    <p id="methodNote" class="method-note"></p>
+    <section id="metrics" class="metrics" aria-label="读图指标"></section>
+    <section id="humanFinding" class="human-finding" aria-label="人工确认记录"></section>
+    <section id="diagnostics" class="diagnostics" aria-label="单题诊断" hidden><h2>单题诊断 <small>未标注，不计入准确率</small></h2><nav id="diagnosticLinks"></nav></section>
+    <div class="plots">
+      <section class="plot-section"><div class="section-heading"><h2>各批次答案分布</h2><span>非同题对照</span></div><div id="legend" class="legend"></div><div class="axis-title">批次 · 占已测试题数比例（%）</div><div id="batchPlot" class="plot"></div><div class="axis"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><p class="caption" id="batchCaption"></p></section>
+      <section class="plot-section"><div class="section-heading"><h2>各题型答案分布</h2><span id="familyScope"></span></div><div class="family-heading"><span>题型</span><span>一致 / 测试</span></div><div class="axis-title">题型 · 占已测试题数比例（%）</div><div id="familyPlot" class="plot"></div><div class="axis"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><p class="caption" id="familyCaption"></p></section>
+    </div>
+    <section class="cases"><div class="section-heading"><h2>逐题结果</h2><span id="caseCount"></span></div><div class="table-filters"><label class="search"><i data-lucide="search" aria-hidden="true"></i><input id="search" type="search" aria-label="搜索题目" placeholder="题号或问题"></label><label>题型<select id="family"><option value="all">全部题型</option></select></label><label>结果<select id="outcome"><option value="all">全部已测试</option><option value="agree">与标注一致</option><option value="disagree">与标注不一致</option><option value="timeout">超时</option><option value="pending">待核对</option></select></label></div>
+      <div class="table-scroll" role="region" aria-label="逐题答案与原始记录" tabindex="0"><table><thead><tr><th>题目 / 批次</th><th>候选答案</th><th>KIMI 回答</th><th>结果 / 依据</th><th>看图次数</th><th>用时（秒）</th></tr></thead><tbody id="caseRows"></tbody></table></div>
+    </section>
+    <details class="methodology"><summary>统计口径与来源</summary><ul><li>主指标为候选答案一致率，不是专家 GT 准确率。只在人工明确确认的题目上使用“确认答错”。</li><li>全部测试口径：一致题数 ÷ 已测试题数，包含超时与待核对；已提交口径：一致题数 ÷ 有正式答案的题数。隔离题不进入这两个分母。</li><li>事后核对只处理逐条列出的文本等义回答，并应用独立人工覆盖记录；不修改原始自动判分或候选标注。附加解释中的尺寸、推理与几何断言未被单独验证。</li><li>原版长提示、基础框选、上下文难题不是同题受控实验，输入与筛选方式不同。批次差异不能直接归因于提示词或难度。</li><li>难题中被隔离的 9 题未让 KIMI 作答。它们不是模型失败，也不计入难题成绩。</li></ul><p id="provenance"></p></details>
+  </main>
+  <script type="application/json" id="reportData">__REPORT_DATA__</script><script src="vendor/lucide/lucide.min.js"></script><script>__REPORT_SCRIPT__</script>
+</body></html>

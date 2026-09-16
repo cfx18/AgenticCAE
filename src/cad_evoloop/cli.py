@@ -30,6 +30,9 @@ from .evaluation.gt_trajectory import (
     replay_gt_trajectory,
 )
 from .evaluation.input_identifiability import run_input_identifiability_probe
+from .evaluation.benchcad_campaign import BenchCADConfig, run_benchcad_campaign
+from .evaluation.benchcad_dataset import materialize_benchcad_pilot
+from .evaluation.benchcad_report import generate_benchcad_report
 from .evaluation.human_review import HumanReviewStore, serve_geometry_review
 from .evaluation.review_feedback import (
     ingest_human_reviews,
@@ -458,6 +461,7 @@ def _serve_geometry_review() -> None:
     parser.add_argument("--reviews", type=Path, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--catalog", type=Path, help="Experiment catalog with an independent UI snapshot")
     args = parser.parse_args()
     serve_geometry_review(
         args.bundle_dir,
@@ -465,6 +469,7 @@ def _serve_geometry_review() -> None:
         app_dir=args.bundle_dir / "app",
         host=args.host,
         port=args.port,
+        catalog_path=args.catalog,
     )
 
 
@@ -607,6 +612,67 @@ def _probe_input_identifiability() -> None:
     }, indent=2, ensure_ascii=False))
 
 
+def _batch_benchcad_agent() -> None:
+    parser = argparse.ArgumentParser(description="Run EvoCAD's image-feedback agent on BenchCAD")
+    parser.add_argument("--upstream", type=Path, default=project_root() / ".local/benchcad-agentic")
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--output", type=Path, default=project_root() / "reports/generated/benchcad")
+    parser.add_argument("--campaign", required=True)
+    parser.add_argument("--model", default="gpt-5.6-sol")
+    parser.add_argument("--reasoning-effort", default="medium")
+    parser.add_argument("--max-iterations", type=int, default=12)
+    parser.add_argument("--max-records", type=int)
+    parser.add_argument("--timeout", type=int, default=1800)
+    parser.add_argument("--exec-timeout", type=int, default=600)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    parser.add_argument(
+        "--reconstruction-mode", choices=("baseline", "forced_ir", "specialist_ir"), default="forced_ir",
+    )
+    args = parser.parse_args()
+    data_dir = args.data_dir or args.upstream / "Vision2Code/test_data"
+    result = run_benchcad_campaign(BenchCADConfig(
+        upstream=args.upstream, data_dir=data_dir, output=args.output,
+        campaign=args.campaign, model=args.model, effort=args.reasoning_effort,
+        max_iterations=args.max_iterations, max_records=args.max_records,
+        timeout=args.timeout, exec_timeout=args.exec_timeout,
+        voxel_resolution=args.voxel_resolution,
+        reconstruction_mode=args.reconstruction_mode,
+    ))
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+
+
+def _materialize_benchcad() -> None:
+    parser = argparse.ArgumentParser(description="Materialize a deterministic family-diverse BenchCAD pilot")
+    parser.add_argument("--parquet-dir", type=Path, default=project_root() / ".local/datasets/evocad/benchcad/code_gen/data")
+    parser.add_argument("--upstream", type=Path, default=project_root() / ".local/benchcad-agentic")
+    parser.add_argument("--output", type=Path, default=project_root() / ".local/benchcad-eval/family-30-v1")
+    parser.add_argument("--count", type=int, default=30)
+    parser.add_argument("--seed", default="evocad-benchcad-family-v1")
+    parser.add_argument("--dataset-revision", default="5919f578ab09ec283603a082fab07c7639ab56eb")
+    args = parser.parse_args()
+    result = materialize_benchcad_pilot(
+        parquet_dir=args.parquet_dir, upstream=args.upstream, output=args.output,
+        count=args.count, seed=args.seed, dataset_revision=args.dataset_revision,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _report_benchcad() -> None:
+    parser = argparse.ArgumentParser(description="Post-hoc score and report a BenchCAD campaign")
+    parser.add_argument("campaign_dir", type=Path)
+    parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--upstream", type=Path, default=project_root() / ".local/benchcad-agentic")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--voxel-resolution", type=int, default=64)
+    parser.add_argument("--timeout", type=int, default=900)
+    args = parser.parse_args()
+    result = generate_benchcad_report(
+        args.campaign_dir, args.data_dir, args.upstream, workers=args.workers,
+        resolution=args.voxel_resolution, timeout=args.timeout,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def main() -> None:
     commands: dict[str, tuple[Callable[[], None], str]] = {
         "batch": (batch, "run a model evaluation campaign"),
@@ -654,6 +720,15 @@ def main() -> None:
         ),
         "gt-identifiability-probe": (
             _probe_input_identifiability, "probe drawing-to-GT parameter identifiability",
+        ),
+        "benchcad-agent-batch": (
+            _batch_benchcad_agent, "run the EvoCAD image-feedback agent on BenchCAD",
+        ),
+        "benchcad-materialize": (
+            _materialize_benchcad, "materialize a deterministic family-diverse BenchCAD pilot",
+        ),
+        "benchcad-report": (
+            _report_benchcad, "post-hoc score all checkpoints and report BenchCAD results",
         ),
     }
     if len(sys.argv) > 1 and sys.argv[1] in commands:

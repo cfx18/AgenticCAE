@@ -227,20 +227,25 @@ class SynchronizedGeometryViewers {
       if (truth) {
         this.viewports.truth.addGeometry(truth, COLORS.truth);
         this.viewports.truth.showInteractive();
-        this.viewports.overlay.addGeometry(truth, COLORS.truth, candidate ? 0.48 : 1);
-        this.viewports.overlay.showInteractive();
+        if (candidate) {
+          this.viewports.overlay.addGeometry(truth, COLORS.truth, 0.48);
+          this.viewports.overlay.showInteractive();
+        }
       } else {
         this.viewports.truth.showFallback("Ground-truth geometry unavailable");
       }
       if (candidate) {
         this.viewports.candidate.addGeometry(candidate, COLORS.candidate);
         this.viewports.candidate.showInteractive();
-        this.viewports.overlay.addGeometry(candidate, COLORS.candidate, truth ? 0.66 : 1);
-        this.viewports.overlay.showInteractive();
+        if (truth) {
+          this.viewports.overlay.addGeometry(candidate, COLORS.candidate, 0.66);
+          this.viewports.overlay.showInteractive();
+        }
       } else {
         this.viewports.candidate.showFallback("Candidate geometry unavailable");
         if (!truth) this.viewports.overlay.showFallback("Overlay geometry unavailable");
       }
+      if (!truth || !candidate) this.viewports.overlay.showFallback("Overlay requires both ground truth and candidate");
       const visualization = localization?.visualization || {};
       const missing = visualization.ground_truth_to_candidate || [];
       const excess = visualization.candidate_to_ground_truth || [];
@@ -324,6 +329,8 @@ class SynchronizedGeometryViewers {
         viewport.camera.updateProjectionMatrix();
         viewport.controls.update();
       }
+      // Loading or resetting geometry changes the frustum without a DOM resize.
+      viewport.updateProjectionBounds();
       viewport.render();
     }
     this.syncing = false;

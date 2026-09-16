@@ -1,0 +1,9 @@
+{
+  "task_id": "omnimech4-line-01",
+  "source_id": "omnimech-4",
+  "source": "reports/generated/direct-kimi-k3-omnimech4-20260916-review/assets/omnimech-4/kimi-k3/input-01.png",
+  "source_sha256": "74b4cb73e73a20c7647c3c4dab2479a69308887814bc1fb99f127165cad88e97",
+  "bbox": [727, 239, 733, 248],
+  "query": "红框中这段线表示什么？",
+  "selection_note": "用户要求判断 OmniMech-4 正视图外圈点划线的连续长划部分。助手定位在右上方长划末段；此说明仅保存在私有记录，不提供给 KIMI。没有独立参考标注，不自动判对错。"
+}

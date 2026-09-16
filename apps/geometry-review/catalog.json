@@ -1,0 +1,175 @@
+{
+    "workspace_root":  "../..",
+    "app_dir":  "apps/geometry-review",
+    "presentation_dir":  "reports/generated/geometry-review-ui",
+    "bundles":  [
+                    {
+                        "id":  "evocad-kimi-2",
+                        "harness":  "EvoCAD",
+                        "label":  "OmniMech 2 - Kimi K3 (feedback loop)",
+                        "bundle":  "reports/generated/evocad-kimi-k3-omnimech-2-4-10-20260916-2-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/evocad-kimi-k3-omnimech-2-4-10-20260916-2.jsonl"
+                    },
+                    {
+                        "id":  "direct-kimi-2",
+                        "harness":  "Kimi Code",
+                        "label":  "OmniMech 2 - Kimi K3",
+                        "bundle":  "reports/generated/direct-kimi-k3-omnimech2-20260916-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-kimi-k3-omnimech2-20260916.jsonl"
+                    },
+                    {
+                        "id":  "direct-kimi-4",
+                        "harness":  "Kimi Code",
+                        "label":  "OmniMech 4 - Kimi K3",
+                        "bundle":  "reports/generated/direct-kimi-k3-omnimech4-20260916-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-kimi-k3-omnimech4-20260916.jsonl"
+                    },
+                    {
+                        "id":  "direct-kimi-10",
+                        "harness":  "Kimi Code",
+                        "label":  "OmniMech 10 - Kimi K3 (time budget)",
+                        "bundle":  "reports/generated/direct-kimi-k3-omnimech10-20260916-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-kimi-k3-omnimech10-20260916.jsonl"
+                    },
+                    {
+                        "id":  "cadgenbench-astra-111",
+                        "harness":  "Codex",
+                        "label":  "CADGenBench 111 - Astra Ultra",
+                        "bundle":  "reports/generated/cadgenbench-astra-111-review",
+                        "reviews":  "evals/cadgenbench/human-reviews/111-astra-ultra.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/cadgenbench-astra-111-recorded-io",
+                                            "manifest_sha256":  "4f78da19ddb51852c74b7dbe3b63e2cde514fc048489c4f234f87fd702724aee",
+                                            "zip_path":  "reports/generated/cadgenbench-astra-111-recorded-io.zip",
+                                            "zip_sha256":  "e48b070e9abd6cc81b3c7baa13edf8c3095c238da79cbea30fc029d5060aeee0",
+                                            "note":  "Official GT accuracy pending. One native Codex conversation, AutoCAD construction, no GT feedback. Self-checks are not an accuracy score."
+                                        }
+                    },
+                    {
+                        "id":  "evocad-astra-2",
+                        "harness":  "EvoCAD",
+                        "label":  "OmniMech 2 - Astra Ultra",
+                        "bundle":  "reports/generated/evocad-astra-ultra-omnimech2-https-20260915-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/evocad-astra-ultra-omnimech2-https-20260915.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/evocad-astra-omnimech2-recorded-io-20260915",
+                                            "manifest_sha256":  "5204ff911a11c0f34b9bcbd6f1b41a836019a821df23eb7b6bd9db2b75c4cc98",
+                                            "zip_path":  "reports/generated/evocad-astra-omnimech2-recorded-io-20260915.zip",
+                                            "zip_sha256":  "d62ab1abed5551b86450e2ab557d72434532bc817726616e61a846020d8cc0b5",
+                                            "note":  "First candidate passed before score feedback; no repair round. One supervisor interruption/resume. UI elapsed 705 s covers the resumed attempt only; initial launch to completion was 1594.5 s."
+                                        }
+                    },
+                    {
+                        "id":  "features",
+                        "harness":  "EvoCAD",
+                        "label":  "V2 - Feature review (30)",
+                        "bundle":  "reports/generated/agent-geometry-30-sol-v2-feature-review-display-v2",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/agent-geometry-30-sol-v2-feature-review-display-v2.jsonl"
+                    },
+                    {
+                        "id":  "feedback",
+                        "harness":  "EvoCAD",
+                        "label":  "V3 - Human feedback (2)",
+                        "bundle":  "reports/generated/agent-geometry-30-sol-human-feedback-v3-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/agent-geometry-30-sol-human-feedback-v3.jsonl"
+                    },
+                    {
+                        "id":  "main",
+                        "harness":  "EvoCAD",
+                        "label":  "V2 - Original reviews (30)",
+                        "bundle":  "reports/generated/agent-geometry-30-sol-v2-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/agent-geometry-30-sol-v2.jsonl"
+                    },
+                    {
+                        "id":  "lineage",
+                        "harness":  "EvoCAD",
+                        "label":  "V2 - Lineage pilot (2)",
+                        "bundle":  "reports/generated/agent-geometry-lineage-pilot-sol-v2-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/agent-geometry-lineage-pilot-sol-v2.jsonl"
+                    },
+                    {
+                        "id":  "recovery",
+                        "harness":  "EvoCAD",
+                        "label":  "V2 - Recovery (1)",
+                        "bundle":  "reports/generated/agent-geometry-lineage-pilot-sol-v2-recovery1-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/agent-geometry-lineage-pilot-sol-v2-recovery1.jsonl"
+                    },
+                    {
+                        "id":  "direct",
+                        "harness":  "Codex",
+                        "label":  "OmniMech 2 - Sol Ultra",
+                        "bundle":  "reports/generated/direct-codex-sol-ultra-omnimech2-https-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-codex-sol-ultra-omnimech2-https-20260914.jsonl"
+                    },
+                    {
+                        "id":  "direct-astra-2",
+                        "harness":  "Codex",
+                        "label":  "OmniMech 2 - Astra Ultra",
+                        "bundle":  "reports/generated/direct-codex-astra-ultra-omnimech2-https-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-codex-astra-ultra-omnimech2-https-20260914.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/direct-codex-astra-ultra-omnimech2-https-20260914-recorded-io-20260915",
+                                            "manifest_sha256":  "0f547cc5dd08cc0fa5fe270124db291ab39878c4fae758dc4da8634860943e7f",
+                                            "zip_path":  "reports/generated/direct-codex-astra-ultra-omnimech2-https-20260914-recorded-io-20260915.zip",
+                                            "zip_sha256":  "5838a3e04b075ebc24d74dbcb5782576619eef9a06b4b355bcf0ba9250012c38",
+                                            "note":  "Native Codex single-conversation run; no verifier score feedback during modeling. The later human mirror is a separate diagnostic, not a replacement for this 91.69 result."
+                                        }
+                    },
+                    {
+                        "id":  "direct-sol-10",
+                        "harness":  "Codex",
+                        "label":  "OmniMech 10 - Sol Ultra",
+                        "bundle":  "reports/generated/direct-codex-sol-ultra-omnimech10-https-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-codex-sol-ultra-omnimech10-https-20260914.jsonl"
+                    },
+                    {
+                        "id":  "direct-astra-10",
+                        "harness":  "Codex",
+                        "label":  "OmniMech 10 - Astra Ultra",
+                        "bundle":  "reports/generated/direct-codex-astra-ultra-omnimech10-https-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-codex-astra-ultra-omnimech10-https-20260914.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/direct-codex-astra-ultra-omnimech10-https-20260914-recorded-io-20260915",
+                                            "manifest_sha256":  "a24d1fae812ea25085bf95c9d02448187e17f90502571daf98958c1d0685a27f",
+                                            "zip_path":  "reports/generated/direct-codex-astra-ultra-omnimech10-https-20260914-recorded-io-20260915.zip",
+                                            "zip_sha256":  "0d3ec20a4c8aba47c045905aec192a313dbac3302a0c0436c1722f952e538f97",
+                                            "note":  "Native Codex single-conversation run. Score computed after modeling; no in-run GT metric feedback."
+                                        }
+                    },
+                    {
+                        "id":  "direct-astra-4",
+                        "harness":  "Codex",
+                        "label":  "OmniMech 4 - Astra Ultra",
+                        "bundle":  "reports/generated/direct-codex-astra-ultra-omnimech4-https-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/direct-codex-astra-ultra-omnimech4-https-20260914.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/direct-codex-astra-ultra-omnimech4-https-20260914-recorded-io-20260915",
+                                            "manifest_sha256":  "6b8b23b9c2d641add909cbf32ec28a15bbf9c873bbac794cdd6989d36ba888ac",
+                                            "zip_path":  "reports/generated/direct-codex-astra-ultra-omnimech4-https-20260914-recorded-io-20260915.zip",
+                                            "zip_sha256":  "6fc4d0f2df6a8f6c7809306e5eff376deeb157e0c36848bb66641112ea05333e",
+                                            "note":  "Native Codex run. A post-evaluation topology-export incident is preserved in raw/campaign; the scored DWG was restored byte-for-byte and verified. Metrics were not replaced."
+                                        }
+                    },
+                    {
+                        "id":  "mirror-astra-2",
+                        "harness":  "Diagnostics",
+                        "label":  "OmniMech 2 - Astra + human mirror",
+                        "bundle":  "reports/generated/human-mirror-astra-omnimech2-20260914-review",
+                        "reviews":  "evals/geometry-benchmarks/human-reviews/human-mirror-astra-omnimech2-20260914.jsonl",
+                        "recorded_io":  {
+                                            "directory":  "reports/generated/human-mirror-astra-omnimech2-20260914-recorded-io-20260915",
+                                            "manifest_sha256":  "e1cde7b0fda3a6205404f55bba27f28aef43542a2a704220a5d526943b0676ba",
+                                            "zip_path":  "reports/generated/human-mirror-astra-omnimech2-20260914-recorded-io-20260915.zip",
+                                            "zip_sha256":  "8f50d9855c453d3a5750b9e803c84d0513023caf7538ee82090951955decd97d",
+                                            "note":  "Human-requested whole-solid reflection across y=32. Zero new Astra model calls. The 100 score is a posthoc diagnostic, not an autonomous Agent pass."
+                                        }
+                    }
+                ],
+    "supplemental_pages":  {
+                               "kimi-vision-direct-2.html":  "reports/generated/kimi-vision-direct-omnimech2-20260916-131138-468/index.html",
+                               "kimi-vision-direct-10.html":  "reports/generated/kimi-vision-direct-omnimech10-20260916-131139-953/index.html",
+                               "kimi-vision-direct-4.html":  "reports/generated/kimi-vision-direct-omnimech4-20260916-131139-141/index.html",
+                               "kimi-vision-evocad-2.html":  "reports/generated/kimi-vision-evocad-omnimech2-20260916-131224-579/index.html",
+                               "kimi-vision.html":  "reports/generated/kimi-vision-direct-omnimech2-20260916-131138-468/index.html"
+                           }
+}

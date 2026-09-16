@@ -25,6 +25,8 @@ geometry = [
   "trimesh>=4.4,<5",
 ]
 test = ["pytest>=8"]
+report = ["matplotlib>=3.8"]
+kimi = ["jsonschema>=4.22,<5"]
 
 [project.scripts]
 cad-evoloop = "cad_evoloop.cli:main"
@@ -57,6 +59,7 @@ cad-evoloop-gt-trajectory-extract = "cad_evoloop.cli:_extract_gt_trajectories"
 cad-evoloop-gt-trajectory-replay = "cad_evoloop.cli:_replay_gt"
 cad-evoloop-gt-attribution-report = "cad_evoloop.cli:_report_gt_attribution"
 cad-evoloop-gt-identifiability-probe = "cad_evoloop.cli:_probe_input_identifiability"
+cad-evoloop-benchcad-report = "cad_evoloop.cli:_report_benchcad"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -66,7 +69,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-cad_evoloop = ["verification/schemas/*.json", "evaluation/schemas/*.json"]
+cad_evoloop = ["verification/schemas/*.json", "evaluation/schemas/*.json", "agent/models/*.mjs"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "evals/cad-1000-hours"]

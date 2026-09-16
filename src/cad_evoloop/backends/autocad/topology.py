@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import threading
 import time
@@ -66,6 +67,9 @@ class TopologyExportJobManager:
         job_id = uuid.uuid4().hex
         job_dir = self.workspace / "mcp" / "jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
+        # Core Console can rewrite a drawing even in a nominally read-only job.
+        working_source = job_dir / "input.dwg"
+        shutil.copy2(source, working_source)
         script = job_dir / "run.scr"
         query_command = "EVOCAD_LOCATE_POINTS\n" if query_input is not None else ""
         script.write_text(
@@ -79,6 +83,7 @@ class TopologyExportJobManager:
         )
         (job_dir / "request.json").write_text(json.dumps({
             "input_path": str(source), "output_path": str(output), "timeout_seconds": timeout,
+            "working_input_path": str(working_source),
             "plugin_path": str(self.plugin),
             "query_input_path": str(query_input) if query_input else None,
             "query_output_path": str(query_output) if query_output else None,
@@ -88,6 +93,7 @@ class TopologyExportJobManager:
             "job_id": job_id, "backend": "core_console_topology", "status": "queued",
             "created_at": utc_now(), "started_at": None, "finished_at": None,
             "timeout_seconds": timeout, "input_path": str(source), "output_path": str(output),
+            "working_input_path": str(working_source),
             "job_dir": str(job_dir), "pid": None, "return_code": None, "error": None,
             "diagnostic": None,
             "query_output_path": str(query_output) if query_output else None,
@@ -98,7 +104,7 @@ class TopologyExportJobManager:
             self._cancel_events[job_id] = event
             self._trim_history_locked()
         threading.Thread(
-            target=self._run, args=(job_id, source, script, output, query_input, query_output, query_source_center, timeout, event),
+            target=self._run, args=(job_id, working_source, script, output, query_input, query_output, query_source_center, timeout, event),
             name=f"accoreconsole-topology-{job_id[:8]}", daemon=True,
         ).start()
         return self.status(job_id)

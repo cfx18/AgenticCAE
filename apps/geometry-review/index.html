@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EvoCAD Geometry Review</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="benchmark-metrics.css">
 </head>
 <body>
   <header class="topbar">
@@ -15,17 +16,29 @@
 
   <main class="workspace">
     <aside class="run-browser">
-      <div class="filter-grid">
-        <label>Dataset<select id="datasetFilter"></select></label>
-        <label>Model<select id="modelFilter"></select></label>
-        <label>Verifier<select id="outcomeFilter"><option value="all">All outcomes</option><option value="passed">Strict pass</option><option value="failed">Strict fail</option></select></label>
-        <label>Human review<select id="reviewFilter"><option value="all">All records</option><option value="pending">Pending</option><option value="reviewed">Reviewed</option><option value="disputed">Disputed</option></select></label>
+      <nav class="review-navigation" aria-label="评审工作区"><a href="?view=features" aria-current="page"><i data-lucide="box" aria-hidden="true"></i>几何评审</a><a id="drawingResultsLink" href="http://127.0.0.1:8775/results.html"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>读图结果</a></nav>
+      <div class="harness-navigation" id="harnessNavigation" hidden>
+        <div class="sidebar-heading"><h2>实验</h2><button class="records-button" id="openRecords" type="button" aria-haspopup="dialog"><i data-lucide="archive" aria-hidden="true"></i>记录归档</button></div>
+        <label>Harness<select id="harnessFilter" aria-label="Harness"></select></label>
+        <label>当前实验<span class="wrapping-select"><span data-select-value="experimentFilter" aria-hidden="true"></span><i data-lucide="chevron-down" aria-hidden="true"></i><select id="experimentFilter" aria-label="Experiment"></select></span></label>
+        <nav id="experimentRecords" class="experiment-records" aria-label="当前实验记录" hidden></nav>
       </div>
-      <div class="run-count" id="runCount"></div>
-      <section class="review-audit">
-        <h2>Evaluation audit</h2>
+      <div id="navigationStatus" role="status" aria-live="polite"></div>
+      <details class="sidebar-disclosure" id="runFilters">
+        <summary><i data-lucide="list-filter" aria-hidden="true"></i><span>筛选算例</span><span id="filterCount" class="filter-count" hidden></span><i data-lucide="chevron-down" class="disclosure-chevron" aria-hidden="true"></i></summary>
+        <div class="filter-grid">
+          <label>数据集<span class="wrapping-select"><span data-select-value="datasetFilter" aria-hidden="true"></span><i data-lucide="chevron-down" aria-hidden="true"></i><select id="datasetFilter" aria-label="Dataset"></select></span></label>
+          <label>模型<span class="wrapping-select"><span data-select-value="modelFilter" aria-hidden="true"></span><i data-lucide="chevron-down" aria-hidden="true"></i><select id="modelFilter" aria-label="Model"></select></span></label>
+          <label>验证结果<select id="outcomeFilter"><option value="all">全部结果</option><option value="passed">严格通过</option><option value="failed">未通过</option><option value="unscored">未评分</option></select></label>
+          <label>人工评审<select id="reviewFilter"><option value="all">全部记录</option><option value="pending">待评审</option><option value="reviewed">已评审</option><option value="disputed">有争议</option></select></label>
+          <button class="reset-filters" id="resetFilters" type="button" disabled><i data-lucide="rotate-ccw" aria-hidden="true"></i>重置筛选</button>
+        </div>
+      </details>
+      <details class="sidebar-disclosure review-audit">
+        <summary><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>评测统计</span><i data-lucide="chevron-down" class="disclosure-chevron" aria-hidden="true"></i></summary>
         <div id="reviewAuditMetrics"></div>
-      </section>
+      </details>
+      <div class="run-list-heading"><h2>算例</h2><span class="run-count" id="runCount"></span></div>
       <div class="run-list" id="runList"></div>
     </aside>
 
@@ -66,6 +79,7 @@
       </section>
 
       <section class="tab-panel" id="verifierPanel">
+        <div id="benchmarkComparison"></div>
         <div class="verifier-layout">
           <div><h2>Protocol checks</h2><div class="check-list" id="checkList"></div></div>
           <div><h2>Geometry diagnostics</h2><div class="geometry-table" id="geometryTable"></div></div>
@@ -132,6 +146,12 @@
   </main>
 
   <dialog id="imageDialog"><button id="closeDialog" aria-label="Close image">Close</button><img id="dialogImage" alt="Expanded review evidence"></dialog>
-  <script src="app.js?v=10"></script>
+  <dialog id="recordsDialog" class="records-dialog" aria-labelledby="recordsTitle">
+    <header><h2 id="recordsTitle">执行记录归档</h2><button id="closeRecords" class="sidebar-icon-button" type="button" title="关闭归档" aria-label="关闭归档"><i data-lucide="x" aria-hidden="true"></i></button></header>
+    <div id="recordsLibrary"></div>
+  </dialog>
+  <script src="vendor/lucide/lucide.min.js"></script>
+  <script src="benchmark-metrics.js"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
