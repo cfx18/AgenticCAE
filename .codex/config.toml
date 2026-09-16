@@ -1,6 +1,0 @@
-[mcp_servers.autocad]
-command = "python"
-args = ["E:/AgenticCAE/.agents/skills/autocad-image-modeling/scripts/autocad_mcp_server.py"]
-env = { AUTOCAD_MCP_WORKSPACE = "E:/AgenticCAE" }
-startup_timeout_sec = 15
-tool_timeout_sec = 120
