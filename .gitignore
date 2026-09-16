@@ -44,6 +44,7 @@ mcp/jobs/
 artifacts/
 reports/generated/
 paper/build/
+release/
 
 # Local/shareable datasets live outside git. Upload these to external storage and
 # restore them under evals/data/ when running data-dependent evals.
