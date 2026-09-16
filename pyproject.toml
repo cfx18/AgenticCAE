@@ -9,7 +9,7 @@ description = "Evidence-grounded cross-layer self-improvement for CAD agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
-authors = [{name = "CAD-EvoLoop Contributors"}]
+authors = [{name = "cfx18"}]
 dependencies = [
   "Pillow>=10",
   "requests>=2.31",

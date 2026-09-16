@@ -3,7 +3,7 @@ message: "If you use CAD-EvoLoop, cite the software and its accompanying paper."
 title: "CAD-EvoLoop"
 type: software
 authors:
-  - name: "CAD-EvoLoop Contributors"
+  - name: "cfx18"
 version: 0.1.0
 date-released: 2026-08-29
 license: Apache-2.0
